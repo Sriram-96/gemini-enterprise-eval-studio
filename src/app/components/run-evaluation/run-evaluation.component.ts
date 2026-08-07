@@ -92,6 +92,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
         hasValidEngine);
   }
 
+  /** Determines if a specific step in the evaluation wizard is accessible. */
   isStepSelectable(targetStep: number): boolean {
     if (targetStep === 1) {
       return true;
