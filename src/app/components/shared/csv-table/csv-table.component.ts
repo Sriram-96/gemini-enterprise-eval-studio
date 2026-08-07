@@ -15,7 +15,7 @@
  */
 
 import {CommonModule, formatDate} from '@angular/common';
-import {Component, Input} from '@angular/core';
+import {Component, Input, OnChanges} from '@angular/core';
 
 import {CsvService} from '../../../services/csv.service';
 
@@ -29,6 +29,7 @@ export interface ColumnDef {
   key: string;
   type?: 'text'|'markdown'|'number'|'score'|'delta';
   truncate?: boolean;
+  width?: string;
 }
 
 @Component({
@@ -41,13 +42,19 @@ export interface ColumnDef {
  * Component for displaying CSV data in a table.
  * Supports markdown rendering, truncation, and expansion of cells.
  */
-export class CsvTableComponent {
+export class CsvTableComponent implements OnChanges {
   @Input() data: any[] = [];
   @Input() columns: ColumnDef[] = [];
   @Input() title = '';
   @Input() exportFileName: string = 'eval_results';
 
+  hasTruncated = false;
+
   constructor(private csvService: CsvService) {}
+
+  ngOnChanges() {
+    this.hasTruncated = this.columns.some(col => col.truncate);
+  }
 
   /**
    * Exports the table data to a CSV file.
