@@ -14,28 +14,33 @@
  * limitations under the License.
  */
 
+import {AppConfig, Engine} from '../models/app-config.model';
+
 /**
- * Configuration for the evaluation application.
+ * Request body for callAssist.
  */
-export interface AppConfig {
-  projectId: string;
-  region: string;
+export interface AssistRequest {
   selectedEngine: string;
-  selectedModel: string;
-  autoRaterModel: string;
-  autoRaterInstruction: string;
-  selectedDataStores: string[];
-  enableWebSearch: boolean;
-  // Restored for no-auth mode
-  gCloudToken?: string;
+  region: string;
+  body: any;
 }
 
 /**
- * Represents an evaluation engine.
+ * Request body for callScore.
  */
-export interface Engine {
-  name: string;
-  displayName: string;
-  modelConfigs?: {[key: string]: string};
-  dataStoreIds?: string[];
+export interface ScoreRequest {
+  projectId: string;
+  region: string;
+  model: string;
+  body: any;
+}
+
+/**
+ * Abstract class for Evaluation Backend Service.
+ * Serves as a Dependency Injection token.
+ */
+export abstract class EvalBackendService {
+  abstract callAssist(request: AssistRequest): Promise<Response>;
+  abstract callScore(request: ScoreRequest): Promise<Response>;
+  abstract fetchEngines(projectId: string, region: string, config: AppConfig): Promise<Engine[]>;
 }

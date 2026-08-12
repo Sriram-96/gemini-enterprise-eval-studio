@@ -5,10 +5,10 @@
   "scripts": {
     "ng": "ng",
     "start:no-auth": "ng serve",
-    "start:auth": "concurrently \"tsx watch src/server/main.ts\" \"ng serve --proxy-config proxy.conf.js\"",
+    "start:auth": "concurrently \"tsx watch src/server/main.ts\" \"ng serve --configuration auth-development\"",
     "start": "npm run start:no-auth",
     "build:no-auth": "ng build",
-    "build:auth": "ng build && tsc -p tsconfig.server.json",
+    "build:auth": "ng build --configuration auth-production && tsc -p tsconfig.server.json",
     "build": "npm run build:no-auth",
     "test:frontend": "ng test",
     "test:server": "tsx node_modules/jasmine/bin/jasmine.js --config=jasmine.json",

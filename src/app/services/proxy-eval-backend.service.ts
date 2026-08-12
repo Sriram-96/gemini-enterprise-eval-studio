@@ -1,0 +1,65 @@
+/*
+ * Copyright 2026 Google LLC
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import {HttpClient} from '@angular/common/http';
+import {Injectable} from '@angular/core';
+import {firstValueFrom} from 'rxjs';
+
+import {AppConfig, Engine} from '../models/app-config.model';
+import {AssistRequest, EvalBackendService, ScoreRequest} from './eval-backend.service';
+
+/**
+ * Implementation of EvalBackendService that proxies requests to the Express backend.
+ */
+@Injectable()
+export class ProxyEvalBackendService extends EvalBackendService {
+
+  constructor(private readonly http: HttpClient) {
+    super();
+  }
+
+  override async callAssist(request: AssistRequest): Promise<Response> {
+    return fetch('/api/v1/assist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+  }
+
+  override async callScore(request: ScoreRequest): Promise<Response> {
+    return fetch('/api/v1/score', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+  }
+
+  override async fetchEngines(
+      projectId: string,
+      region: string,
+      config: AppConfig
+  ): Promise<Engine[]> {
+    const url = `/api/v1/engines?projectId=${projectId}&region=${region}`;
+    const res = await firstValueFrom(
+        this.http.get<{engines?: Engine[]}>(url)
+    );
+    return res.engines || [];
+  }
+}
