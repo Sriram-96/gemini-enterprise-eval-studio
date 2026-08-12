@@ -161,9 +161,13 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.stateService.config$.pipe(takeUntil(this.destroy$))
         .subscribe((c: AppConfig) => {
+          const engineChanged = this.config.selectedEngine !== c.selectedEngine;
           this.config = structuredClone(c);
           if (this.engines.length > 0) {
             this.updateModelsForSelectedEngine();
+            if (engineChanged) {
+              this.fetchConnectorsForSelectedEngine();
+            }
           }
           if (this.autoRaterModels.length > 0 && (!this.config.autoRaterModel || !this.autoRaterModels.includes(this.config.autoRaterModel))) {
             this.config.autoRaterModel = this.autoRaterModels[0];

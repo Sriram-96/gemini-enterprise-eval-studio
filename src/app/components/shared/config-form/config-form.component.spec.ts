@@ -465,6 +465,33 @@ describe('ConfigFormComponent', () => {
 
          expect(component.config.autoRaterModel).toBe('gemini-3.5-flash');
        });
+
+    it('should fetch connectors if selectedEngine changes in config$', () => {
+      const fixture = TestBed.createComponent(ConfigFormComponent);
+      const component = fixture.componentInstance;
+      spyOn(component, 'fetchConnectorsForSelectedEngine');
+
+      // Set engines so updateModelsForSelectedEngine and fetchConnectors can
+      // run
+      enginesSubject.next([{name: 'engine-1', displayName: 'Engine 1'}]);
+      fixture.detectChanges();
+
+      expect(component.fetchConnectorsForSelectedEngine).not.toHaveBeenCalled();
+
+      configSubject.next({
+        gCloudToken: 'token',
+        projectId: 'project',
+        region: 'global',
+        selectedEngine: 'engine-1',
+        selectedModel: 'auto',
+        autoRaterModel: 'gemini-3.1-pro-preview',
+        autoRaterInstruction: '',
+        selectedDataStores: [],
+        enableWebSearch: false
+      });
+
+      expect(component.fetchConnectorsForSelectedEngine).toHaveBeenCalled();
+    });
   });
 
   describe('fetchConnectorsForSelectedEngine & Option 1 Connector Grouping', () => {
