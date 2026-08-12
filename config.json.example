@@ -1,0 +1,34 @@
+{
+  "session_config": {
+    "// Note": "encryption_key_secret can be a 32-character string for local development, or a GCP Secret Manager URI.",
+    "encryption_key_secret": "projects/YOUR_PROJECT_ID/secrets/SESSION_ENCRYPTION_KEY/versions/latest"
+  },
+  "auth_providers": [
+    {
+      "id": "google-workspace",
+      "type": "google_identity",
+      "display_name": "Sign in with Google",
+      "client_id": "YOUR_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+      "// Note": "client_secret_secret can be a plain string for local development, or a GCP Secret Manager URI.",
+      "client_secret_secret": "projects/YOUR_PROJECT_ID/secrets/OAUTH_CLIENT_SECRET/versions/latest"
+    },
+    {
+      "id": "generic-oidc",
+      "type": "3p_oidc",
+      "display_name": "Sign in with OIDC Provider",
+      "idp_issuer_url": "https://YOUR_IDP_ISSUER_URL",
+      "gcp_pool_id": "YOUR_WORKFORCE_POOL_ID",
+      "gcp_provider_id": "YOUR_WORKFORCE_PROVIDER_ID",
+      "client_id": "YOUR_OIDC_CLIENT_ID",
+      "client_secret_secret": "projects/YOUR_PROJECT_ID/secrets/OIDC_CLIENT_SECRET/versions/latest"
+    },
+    {
+      "id": "generic-saml",
+      "type": "3p_saml",
+      "display_name": "Sign in with SAML Provider",
+      "idp_sso_url": "https://YOUR_IDP_SSO_URL",
+      "gcp_pool_id": "YOUR_WORKFORCE_POOL_ID",
+      "gcp_provider_id": "YOUR_WORKFORCE_PROVIDER_ID"
+    }
+  ]
+}
