@@ -16,7 +16,7 @@
 
 import {Injectable} from '@angular/core';
 
-import {AppConfig, Engine} from '../models/app-config.model';
+import {AppConfig, Engine, WidgetConfigResponse} from '../models/app-config.model';
 import {AssistRequest, EvalBackendService, ScoreRequest} from './eval-backend.service';
 import {StateService} from './state.service';
 
@@ -88,7 +88,41 @@ export class DirectGcpEvalBackendService extends EvalBackendService {
     return data.engines || [];
   }
 
+  override async fetchWidgetConfig(
+      projectId: string,
+      region: string,
+      engineId: string,
+      config: AppConfig
+  ): Promise<WidgetConfigResponse | null> {
+    if (!config.gCloudToken || !projectId || !engineId) {
+      return null;
+    }
+    const baseUrl = region === 'global'
+      ? 'discoveryengine.googleapis.com'
+      : `${region}-discoveryengine.googleapis.com`;
+
+    const enginePath = engineId.startsWith('projects/')
+      ? engineId
+      : `projects/${projectId}/locations/${region}/collections/default_collection/engines/${engineId}`;
+    const url = `https://${baseUrl}/v1alpha/${enginePath}/widgetConfigs/default_search_widget_config`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${config.gCloudToken}`,
+        'x-goog-user-project': projectId
+      }
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json() as WidgetConfigResponse;
+  }
+
   private getGCloudToken(): string {
     return this.stateService.getCurrentConfig().gCloudToken || '';
   }
 }
+

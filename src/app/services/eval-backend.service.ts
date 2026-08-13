@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {AppConfig, Engine} from '../models/app-config.model';
+import {AppConfig, Engine, WidgetConfigResponse} from '../models/app-config.model';
 
 /**
  * Request body for callAssist.
@@ -43,4 +43,11 @@ export abstract class EvalBackendService {
   abstract callAssist(request: AssistRequest): Promise<Response>;
   abstract callScore(request: ScoreRequest): Promise<Response>;
   abstract fetchEngines(projectId: string, region: string, config: AppConfig): Promise<Engine[]>;
+  abstract fetchWidgetConfig(
+      projectId: string,
+      region: string,
+      engineId: string,
+      config: AppConfig
+  ): Promise<WidgetConfigResponse | null>;
 }
+

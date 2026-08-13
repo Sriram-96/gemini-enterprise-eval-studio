@@ -74,7 +74,7 @@ export class FirestoreRefreshTokenStore implements RefreshTokenStore {
         name: fieldName,
         updateMask: 'ttlConfig',
         requestBody: {
-          ttlConfig: { state: 'ENABLED' },
+          ttlConfig: { state: 'ACTIVE' },
         },
       });
       logger.info(`Successfully ensured Firestore TTL policy for field 'expiresAt' on collection group '${this.collectionId}'.`);

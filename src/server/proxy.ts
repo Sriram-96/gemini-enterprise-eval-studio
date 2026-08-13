@@ -170,8 +170,52 @@ export function createProxyRouter(config: Config, refreshTokenStore?: RefreshTok
     }
   });
 
+  // 4. GET /api/v1/widget-config (Discovery Engine widget config proxy)
+  router.get('/api/v1/widget-config', async (req: Request, res: Response) => {
+    const projectId = req.query['projectId'] as string;
+    const region = req.query['region'] as string;
+    const engineId = req.query['engineId'] as string;
 
+    if (!projectId) {
+      res.status(400).send('Missing projectId parameter.');
+      return;
+    }
+
+    if (!region || !REGION_REGEX.test(region)) {
+      res.status(400).send('Invalid or missing region parameter.');
+      return;
+    }
+
+    if (!engineId) {
+      res.status(400).send('Missing engineId parameter.');
+      return;
+    }
+
+    try {
+      const auth = new google.auth.OAuth2();
+      auth.setCredentials({ access_token: req.session?.token.access_token || '' });
+
+      const discoveryengine = google.discoveryengine({ version: 'v1alpha', auth });
+      const enginePath = engineId.startsWith('projects/')
+        ? engineId
+        : `projects/${projectId}/locations/${region}/collections/default_collection/engines/${engineId}`;
+      const name = `${enginePath}/widgetConfigs/default_search_widget_config`;
+
+      const response = await discoveryengine.projects.locations.collections.engines.widgetConfigs.get({
+        name,
+      }, {
+        headers: {
+          'x-goog-user-project': projectId
+        }
+      });
+
+      res.json(response.data);
+    } catch (err: any) {
+      res.status(err.response?.status || 500).send(`Proxy request failed: ${err.message}`);
+    }
+  });
 
   return router;
 }
+
 

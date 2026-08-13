@@ -39,3 +39,22 @@ export interface Engine {
   modelConfigs?: {[key: string]: string};
   dataStoreIds?: string[];
 }
+
+export interface DataStoreComponent {
+  id?: string;
+  displayName?: string;
+}
+
+export interface CollectionComponent {
+  id?: string;
+  displayName?: string;
+  dataSource?: string;
+  connectorAuthState?: any;
+  federatedSearchConnectorAuthUri?: string;
+  dataStoreComponents?: DataStoreComponent[];
+}
+
+export interface WidgetConfigResponse {
+  collectionComponents?: CollectionComponent[];
+}
+

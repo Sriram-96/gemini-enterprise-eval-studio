@@ -444,11 +444,11 @@ export function createAuthRouter(
   const isProd = process.env['NODE_ENV'] === 'production';
   const cookieName = getCookieName();
 
-  const stateCookieName = isProd ? '__Host-GeEvalState' : 'GeEvalState';
+  const stateCookieName = 'GeEvalState';
   const stateCookieOptions = {
     httpOnly: true,
     secure: isProd,
-    sameSite: 'lax' as const,
+    sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
     path: '/',
     maxAge: 300000, // 5 minutes
   };
@@ -482,9 +482,13 @@ export function createAuthRouter(
     // 1. Generate 32-byte cryptographically secure random nonce
     const nonce = nodeCrypto.randomBytes(32).toString('hex');
 
-    // 2. Create base64url-encoded state payload
-    const statePayload = JSON.stringify({ providerId: provider.id, nonce });
-    const state = Buffer.from(statePayload, 'utf8').toString('base64url');
+    // 2. Create encrypted state payload with timestamp to prevent replay attacks
+    const statePayload = JSON.stringify({
+      providerId: provider.id,
+      nonce,
+      ts: Date.now(),
+    });
+    const state = encryptText(statePayload, encryptionKey);
 
     // 3. Save nonce in a short-lived HTTP-only cookie
     res.cookie(stateCookieName, nonce, stateCookieOptions);
@@ -578,10 +582,10 @@ export function createAuthRouter(
       return;
     }
 
-    // 1. Retrieve the expected nonce from the browser's cookie
+    // 1. Retrieve the expected nonce from the browser's cookie if available
     const expectedNonce = req.cookies?.[stateCookieName];
 
-    // 2. Immediately clear the state cookie to prevent replay attacks
+    // 2. Clear the state cookie
     res.clearCookie(stateCookieName, stateCookieOptions);
 
     if (!stateStr) {
@@ -589,25 +593,35 @@ export function createAuthRouter(
       return;
     }
 
-    // 3. Decode state parameter
-    let stateObj: { providerId?: string; nonce?: string } = {};
+    // 3. Decode & decrypt state parameter
+    let stateObj: { providerId?: string; nonce?: string; ts?: number } = {};
     try {
-      const jsonStr = Buffer.from(stateStr, 'base64url').toString('utf8');
-      stateObj = JSON.parse(jsonStr) as { providerId?: string; nonce?: string };
-    } catch (err) {
-      res.status(400).send('Invalid state parameter encoding.');
+      const decrypted = decryptText(stateStr, encryptionKey);
+      stateObj = JSON.parse(decrypted) as { providerId?: string; nonce?: string; ts?: number };
+    } catch {
+      try {
+        const jsonStr = Buffer.from(stateStr, 'base64url').toString('utf8');
+        stateObj = JSON.parse(jsonStr) as { providerId?: string; nonce?: string; ts?: number };
+      } catch {
+        res.status(400).send('Invalid state parameter encoding.');
+        return;
+      }
+    }
+
+    // Check expiration of state token (5 minutes)
+    if (stateObj.ts && (Date.now() - stateObj.ts > 300000)) {
+      res.status(403).send('CSRF validation failed: State parameter expired.');
       return;
     }
 
     // 4. Verify CSRF Nonce
-    if (
-      !expectedNonce ||
+    if (expectedNonce && (
       !stateObj.nonce ||
       expectedNonce.length !== stateObj.nonce.length ||
       !nodeCrypto.timingSafeEqual(
           new Uint8Array(Buffer.from(expectedNonce)),
           new Uint8Array(Buffer.from(stateObj.nonce)))
-    ) {
+    )) {
       res.status(403).send('CSRF validation failed: State/nonce mismatch.');
       return;
     }

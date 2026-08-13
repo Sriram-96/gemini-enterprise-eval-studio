@@ -588,10 +588,9 @@ describe('ConfigFormComponent', () => {
       expect(component.isConnectorSelected(connectorOption)).toBeFalse();
     });
 
-    it('should fetch connectors via GetWidgetConfig endpoint when all parameters are set', () => {
+    it('should fetch connectors via GetWidgetConfig endpoint when all parameters are set', fakeAsync(() => {
       const fixture = TestBed.createComponent(ConfigFormComponent);
       const component = fixture.componentInstance;
-      component.config.gCloudToken = 'token';
       component.config.projectId = 'project';
       component.config.region = 'global';
       component.config.selectedEngine = 'engine1';
@@ -610,33 +609,33 @@ describe('ConfigFormComponent', () => {
         ]
       };
 
-      mockHttpClient.get.and.returnValue(of(mockWidgetData));
+      mockEvalBackendService.fetchWidgetConfigSpy.and.returnValue(Promise.resolve(mockWidgetData));
       component.fetchConnectorsForSelectedEngine();
+      tick();
 
-      expect(mockHttpClient.get).toHaveBeenCalledWith(
-          'https://discoveryengine.googleapis.com/v1alpha/projects/project/locations/global/collections/default_collection/engines/engine1/widgetConfigs/default_search_widget_config',
-          jasmine.any(Object));
+      expect(mockEvalBackendService.fetchWidgetConfigSpy).toHaveBeenCalledWith(
+          'project', 'global', 'engine1', component.config);
       expect(component.connectors.length).toBe(2); // jira-connector + Web Search
-    });
+    }));
 
     it('should fetch connectors using full resource path when selectedEngine starts with projects/',
-       () => {
+       fakeAsync(() => {
          const fixture = TestBed.createComponent(ConfigFormComponent);
          const component = fixture.componentInstance;
-         component.config.gCloudToken = 'token';
          component.config.projectId = 'project';
          component.config.region = 'global';
          component.config.selectedEngine =
              'projects/project/locations/global/collections/default_collection/engines/engine1';
 
-         mockHttpClient.get.and.returnValue(of({collectionComponents: []}));
+         mockEvalBackendService.fetchWidgetConfigSpy.and.returnValue(Promise.resolve({collectionComponents: []}));
          component.fetchConnectorsForSelectedEngine();
+         tick();
 
-         expect(mockHttpClient.get)
+         expect(mockEvalBackendService.fetchWidgetConfigSpy)
              .toHaveBeenCalledWith(
-                 'https://discoveryengine.googleapis.com/v1alpha/projects/project/locations/global/collections/default_collection/engines/engine1/widgetConfigs/default_search_widget_config',
-                 jasmine.any(Object));
-       });
+                 'project', 'global', 'projects/project/locations/global/collections/default_collection/engines/engine1', component.config);
+       }));
+
 
 
     it('should include all widget connectors without duplicate entity IDs from engine fallback', () => {

@@ -35,6 +35,8 @@ export class MockAuthService extends AuthService {
   override logout = jasmine.createSpy('logout');
 }
 
+import {WidgetConfigResponse} from '../models/app-config.model';
+
 /**
  * Mock implementation of EvalBackendService for testing.
  */
@@ -42,6 +44,7 @@ export class MockEvalBackendService extends EvalBackendService {
   callAssistSpy = jasmine.createSpy('callAssist').and.returnValue(Promise.resolve(new Response('[]')));
   callScoreSpy = jasmine.createSpy('callScore').and.returnValue(Promise.resolve(new Response('{}')));
   fetchEnginesSpy = jasmine.createSpy('fetchEngines').and.returnValue(Promise.resolve([]));
+  fetchWidgetConfigSpy = jasmine.createSpy('fetchWidgetConfig').and.returnValue(Promise.resolve(null));
 
 
   override callAssist(request: AssistRequest): Promise<Response> {
@@ -54,6 +57,10 @@ export class MockEvalBackendService extends EvalBackendService {
 
   override fetchEngines(projectId: string, region: string, config: any): Promise<Engine[]> {
     return this.fetchEnginesSpy(projectId, region, config);
+  }
+
+  override fetchWidgetConfig(projectId: string, region: string, engineId: string, config: any): Promise<WidgetConfigResponse | null> {
+    return this.fetchWidgetConfigSpy(projectId, region, engineId, config);
   }
 
 

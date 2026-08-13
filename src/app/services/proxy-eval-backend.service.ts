@@ -18,7 +18,7 @@ import {HttpClient} from '@angular/common/http';
 import {Injectable} from '@angular/core';
 import {firstValueFrom} from 'rxjs';
 
-import {AppConfig, Engine} from '../models/app-config.model';
+import {AppConfig, Engine, WidgetConfigResponse} from '../models/app-config.model';
 import {AssistRequest, EvalBackendService, ScoreRequest} from './eval-backend.service';
 
 /**
@@ -62,4 +62,23 @@ export class ProxyEvalBackendService extends EvalBackendService {
     );
     return res.engines || [];
   }
+
+  override async fetchWidgetConfig(
+      projectId: string,
+      region: string,
+      engineId: string,
+      config: AppConfig
+  ): Promise<WidgetConfigResponse | null> {
+    const url = `/api/v1/widget-config?projectId=${projectId}&region=${region}&engineId=${encodeURIComponent(engineId)}`;
+    try {
+      const res = await firstValueFrom(
+          this.http.get<WidgetConfigResponse>(url)
+      );
+      return res || null;
+    } catch (err) {
+      console.error('Error fetching widget config:', err);
+      return null;
+    }
+  }
 }
+

@@ -117,6 +117,39 @@ Then start the server in either **Auth Mode** (full stack) or **No-Auth Mode** (
   ```
   By default, the frontend listens on port 4200.
 
+## Running with Docker
+
+Gemini Enterprise Eval Studio includes a multi-stage `Dockerfile` that packages both the compiled Angular SPA and the Node.js Express backend server into a single production container image.
+
+### 1. Build the Image
+```sh
+docker build -t gemini-enterprise-eval-studio .
+```
+
+### 2. Run the Container
+```sh
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/config.json:/app/config.json \
+  --name eval-studio \
+  gemini-enterprise-eval-studio
+```
+
+### Configuration Options:
+- **Port Mapping**: Map the container to any host port using `-p <host_port>:8080` (e.g. `-p 3000:8080` to access the application at `http://localhost:3000`).
+- **Port Environment Variable**: If you wish to change the container's internal listening port, pass `-e PORT=<port>` (defaults to `8080`).
+- **Configuration File**: Mount your `config.json` into `/app/config.json` via `-v` volume mount, or specify a custom path inside the container using `-e CONFIG_PATH=/path/to/config.json`.
+
+### 3. Deploy to Cloud Run
+You can deploy the application directly to Cloud Run from source. Cloud Run will automatically build the container image using the `Dockerfile` and deploy the service:
+
+```sh
+gcloud run deploy gemini-enterprise-eval-studio \
+  --project=<PROJECT_ID> \
+  --region=<REGION> \
+  --source=.
+```
+
 ## Uninstall and Resource Deletion
 
 To completely uninstall Gemini Enterprise Eval Studio and delete all associated data and resources from your GCP project:

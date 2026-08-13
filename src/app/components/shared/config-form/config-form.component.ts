@@ -21,7 +21,7 @@ import {FormsModule} from '@angular/forms';
 import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
-import {AppConfig, Engine} from '../../../models/app-config.model';
+import {AppConfig, CollectionComponent, DataStoreComponent, Engine, WidgetConfigResponse} from '../../../models/app-config.model';
 import {AuthService} from '../../../services/auth.service';
 import {EvalBackendService} from '../../../services/eval-backend.service';
 import {StateService} from '../../../services/state.service';
@@ -37,29 +37,10 @@ export interface ConnectorOption {
   entityIds: string[];
 }
 
-interface DataStoreComponent {
-  id?: string;
-}
-
-interface CollectionComponent {
-  id?: string;
-  displayName?: string;
-  dataSource?: string;
-  connectorAuthState?: {
-    authState?: string;
-    authorizationUri?: string;
-  };
-  dataStoreComponents?: DataStoreComponent[];
-  federatedSearchConnectorAuthUri?: string;
-}
-
-interface WidgetConfigResponse {
-  collectionComponents?: CollectionComponent[];
-}
-
 interface EnginesResponse {
   engines?: Engine[];
 }
+
 
 interface ConnectorRule {
   readonly key: string;
@@ -313,50 +294,37 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   }
 
   fetchConnectorsForSelectedEngine() {
-    if (!this.config.gCloudToken || !this.config.projectId || !this.config.selectedEngine) {
-      this.connectors = this.buildFallbackConnectors(this.getSelectedEngine());
+    const engine = this.getSelectedEngine();
+    if (!this.config.projectId || !this.config.selectedEngine) {
+      this.connectors = this.buildFallbackConnectors(engine);
       this.validateAndSyncSelectedDataStores();
       return;
     }
 
-    const baseUrl = this.config.region === 'global' ?
-        'discoveryengine.googleapis.com' :
-        `${this.config.region}-discoveryengine.googleapis.com`;
-    const widgetConfigId = 'default_search_widget_config';
-    const enginePath = this.config.selectedEngine.startsWith('projects/') ?
-        this.config.selectedEngine :
-        `projects/${this.config.projectId}/locations/${
-            this.config.region}/collections/default_collection/engines/${
-            this.config.selectedEngine}`;
-    const url = `https://${baseUrl}/v1alpha/${enginePath}/widgetConfigs/${
-        widgetConfigId}`;
-
-
-    this.http
-        .get<WidgetConfigResponse>(url, {
-          headers: {
-            'Authorization': `Bearer ${this.config.gCloudToken}`,
-            'x-goog-user-project': this.config.projectId
-          }
-        })
-        .pipe(takeUntil(this.destroy$))
-        .subscribe({
-          next: (widgetData) => {
-            const parsed = this.parseWidgetDataForConnectors(widgetData, this.getSelectedEngine());
-            if (parsed.length > 0) {
-              this.connectors = parsed;
-            } else {
-              this.connectors = this.buildFallbackConnectors(this.getSelectedEngine());
-            }
-            this.validateAndSyncSelectedDataStores();
-            this.cdr.detectChanges();
-          },
-          error: (error) => {
-            this.connectors = this.buildFallbackConnectors(this.getSelectedEngine());
-            this.validateAndSyncSelectedDataStores();
-            this.cdr.detectChanges();
-          }
-        });
+    this.evalBackendService.fetchWidgetConfig(
+        this.config.projectId,
+        this.config.region,
+        this.config.selectedEngine,
+        this.config
+    ).then((widgetData) => {
+      if (widgetData) {
+        const parsed = this.parseWidgetDataForConnectors(widgetData, engine);
+        if (parsed.length > 0) {
+          this.connectors = parsed;
+        } else {
+          this.connectors = this.buildFallbackConnectors(engine);
+        }
+      } else {
+        this.connectors = this.buildFallbackConnectors(engine);
+      }
+      this.validateAndSyncSelectedDataStores();
+      this.cdr.detectChanges();
+    }).catch((error) => {
+      console.error('Error fetching widget config:', error);
+      this.connectors = this.buildFallbackConnectors(engine);
+      this.validateAndSyncSelectedDataStores();
+      this.cdr.detectChanges();
+    });
   }
 
   /**

@@ -4,6 +4,7 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "outDir": "./dist/server",
+    "rootDir": "src/server",
     "types": ["node"],
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,

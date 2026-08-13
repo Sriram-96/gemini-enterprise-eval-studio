@@ -40,13 +40,17 @@ async function startServer() {
   }
 
   if (!configPath) {
-    logger.error('Critical: Configuration path not provided.');
-    logger.error('Please set CONFIG_PATH environment variable or pass --config=<path> argument.');
-    process.exit(1);
+    configPath = path.resolve(process.cwd(), 'config.json');
+  } else if (!path.isAbsolute(configPath)) {
+    configPath = path.resolve(process.cwd(), configPath);
   }
 
-  if (!path.isAbsolute(configPath)) {
-    configPath = path.resolve(configPath);
+  if (!fs.existsSync(configPath)) {
+    logger.error(
+        `Critical: Configuration file not found at path: ${configPath}`);
+    logger.error(
+        'Please set CONFIG_PATH environment variable, pass --config=<path>, or create config.json at project root.');
+    process.exit(1);
   }
 
 
@@ -102,7 +106,14 @@ async function startServer() {
     }
   }
   if (!staticPath) {
-    staticPath = path.join(__dirname, '../../dist/gemini-enterprise-eval-studio/browser');
+    const candidates = [
+      path.join(__dirname, '../../dist/gemini-enterprise-eval-studio/browser'),
+      path.join(
+          __dirname, '../../../dist/gemini-enterprise-eval-studio/browser'),
+      path.join(process.cwd(), 'dist/gemini-enterprise-eval-studio/browser'),
+    ];
+    staticPath = candidates.find(p => fs.existsSync(path.join(p, 'index.html'))) ||
+        candidates[0];
   } else {
     staticPath = path.resolve(staticPath);
   }
