@@ -20,9 +20,9 @@
   </div>
 
   <!-- Unauthenticated view -->
-  <div *ngIf="!isAuthenticated" class="flex items-center justify-center h-screen bg-gray-100">
+  <main *ngIf="!isAuthenticated" class="flex items-center justify-center h-screen bg-gray-100">
     <div class="bg-white p-8 rounded-lg shadow-md max-w-md w-full text-center">
-      <h2 class="text-2xl font-bold mb-6 text-gray-800">Sign in to Eval Studio</h2>
+      <h1 class="text-2xl font-bold mb-6 text-gray-800">Sign in to Eval Studio</h1>
       <!-- Loading state -->
       <div *ngIf="isLoadingProviders" class="text-gray-500 py-4 flex items-center justify-center space-x-2">
         <svg class="animate-spin h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -47,5 +47,5 @@
         </ng-template>
       </div>
     </div>
-  </div>
+  </main>
 </div>
