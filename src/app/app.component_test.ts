@@ -20,10 +20,15 @@ import {BehaviorSubject} from 'rxjs';
 import {AppComponent} from './app.component';
 import {AppConfig, Engine} from './models/app-config.model';
 import {ResultRow} from './models/result-row.model';
+import {AuthService} from './services/auth.service';
+import {EvalBackendService} from './services/eval-backend.service';
 import {StateService} from './services/state.service';
+import {MockAuthService, MockEvalBackendService} from './testing/mocks';
 
 describe('AppComponent', () => {
   let mockStateService: jasmine.SpyObj<StateService>;
+  let mockAuthService: MockAuthService;
+  let mockEvalBackendService: MockEvalBackendService;
   let currentTabSubject: BehaviorSubject<string>;
   let resultsSubject: BehaviorSubject<ResultRow[]>;
   let configSubject: BehaviorSubject<AppConfig>;
@@ -34,7 +39,6 @@ describe('AppComponent', () => {
     currentTabSubject = new BehaviorSubject<string>('run');
     resultsSubject = new BehaviorSubject<ResultRow[]>([]);
     configSubject = new BehaviorSubject<AppConfig>({
-      gCloudToken: '',
       projectId: '',
       region: 'global',
       selectedEngine: '',
@@ -63,7 +67,6 @@ describe('AppComponent', () => {
         });
     mockStateService.getEngines.and.returnValue([]);
     mockStateService.getCurrentConfig.and.returnValue({
-      gCloudToken: '',
       projectId: '',
       region: 'global',
       selectedEngine: '',
@@ -74,10 +77,17 @@ describe('AppComponent', () => {
       enableWebSearch: false
     });
 
+    mockAuthService = new MockAuthService();
+    mockEvalBackendService = new MockEvalBackendService();
+
     await TestBed
         .configureTestingModule({
           imports: [AppComponent],
-          providers: [{provide: StateService, useValue: mockStateService}]
+          providers: [
+            {provide: StateService, useValue: mockStateService},
+            {provide: AuthService, useValue: mockAuthService},
+            {provide: EvalBackendService, useValue: mockEvalBackendService}
+          ]
         })
         .compileComponents();
   });

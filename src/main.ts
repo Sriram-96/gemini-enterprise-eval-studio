@@ -14,11 +14,20 @@
  * limitations under the License.
  */
 
-import {provideHttpClient} from '@angular/common/http';
 import {bootstrapApplication} from '@angular/platform-browser';
 
 import {AppComponent} from './app/app.component';
+import {AuthService} from './app/services/auth.service';
+import {DirectGcpEvalBackendService} from './app/services/direct-gcp-eval-backend.service';
+import {EvalBackendService} from './app/services/eval-backend.service';
+import {NoopAuthService} from './app/services/noop-auth.service';
+import {StateService} from './app/services/state.service';
 
 bootstrapApplication(AppComponent, {
-  providers: [provideHttpClient()]
+  providers: [
+    StateService,
+    {provide: AuthService, useClass: NoopAuthService},
+    {provide: EvalBackendService, useClass: DirectGcpEvalBackendService},
+  ]
 }).catch((err) => console.error(err));
+

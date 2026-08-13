@@ -19,8 +19,11 @@
       <li>
         <strong>Enable Discovery Engine API in your GCP project</strong>: In the Google Cloud Console, navigate to "APIs & Services" > "Library", search for "Discovery Engine API", and enable it.
       </li>
-      <li>
-        <strong>Google Cloud Access Token</strong>: You can get this by running <code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">gcloud auth print-access-token</code> in your terminal. You can open Cloud Shell (terminal icon on the top right of the Google Cloud Console home page) to run this command.
+      <li *ngIf="!isNoAuthMode">
+        <strong>Authentication (Auth Mode)</strong>: Sign in using your Google Workspace account or a third-party enterprise identity provider (via Workforce Identity Federation OIDC/SAML) to authorize the tool to access Vertex AI and Discovery Engine.
+      </li>
+      <li *ngIf="isNoAuthMode">
+        <strong>Google Cloud Access Token (No-Auth Mode)</strong>: You can get this by running <code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono border border-gray-200">gcloud auth print-access-token</code> in your terminal. You can open Cloud Shell (terminal icon on the top right of the Google Cloud Console home page) to run this command.
         <div class="my-3 flex justify-center">
           <img src="src/assets/cloud_shell_icon.png" alt="Cloud Shell Terminal Button" class="border border-gray-200 rounded shadow-sm max-w-xs md:max-w-sm" />
         </div>

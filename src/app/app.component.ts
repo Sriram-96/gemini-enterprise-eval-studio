@@ -15,16 +15,17 @@
  */
 
 import {CommonModule} from '@angular/common';
-import {Component, OnDestroy, OnInit} from '@angular/core';
+import {ChangeDetectorRef, Component, OnDestroy, OnInit} from '@angular/core';
 import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
 import {AboutComponent} from './components/about/about.component';
 import {CompareEvalsComponent} from './components/compare-evals/compare-evals.component';
-import {RunQueriesComponent} from './components/run-queries/run-queries.component';
 import {HeaderComponent} from './components/header/header.component';
 import {RunEvaluationComponent} from './components/run-evaluation/run-evaluation.component';
+import {RunQueriesComponent} from './components/run-queries/run-queries.component';
 import {SidebarComponent} from './components/sidebar/sidebar.component';
+import {AuthProvider, AuthService} from './services/auth.service';
 import {StateService} from './services/state.service';
 
 /**
@@ -41,14 +42,56 @@ import {StateService} from './services/state.service';
 })
 export class AppComponent implements OnInit, OnDestroy {
   currentTab = 'queries';
+  isAuthenticated = false;
+  isAuthChecked = false;
+  isLoadingProviders = false;
+  providers: AuthProvider[] = [];
   private readonly destroy$ = new Subject<void>();
 
-  constructor(private stateService: StateService) {}
+  constructor(
+      private readonly stateService: StateService,
+      public readonly authService: AuthService,
+      private readonly cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit() {
+    this.authService.checkAuth();
+
     this.stateService.currentTab$
       .pipe(takeUntil(this.destroy$))
       .subscribe(tab => this.currentTab = tab);
+
+    this.authService.isAuthenticated$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(auth => {
+        this.isAuthenticated = auth;
+        this.cdr.detectChanges();
+      });
+
+    this.authService.isAuthChecked$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(checked => {
+        this.isAuthChecked = checked;
+        this.cdr.detectChanges();
+      });
+
+    this.authService.isLoadingProviders$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(loading => {
+        this.isLoadingProviders = loading;
+        this.cdr.detectChanges();
+      });
+
+    this.authService.providers$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(providers => {
+        this.providers = providers;
+        this.cdr.detectChanges();
+      });
+  }
+
+  loginWithProvider(providerId: string) {
+    this.authService.loginWithProvider(providerId);
   }
 
   ngOnDestroy() {

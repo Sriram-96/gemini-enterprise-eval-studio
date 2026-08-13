@@ -20,14 +20,31 @@ import {AppConfig} from '../models/app-config.model';
 import {CSVRow} from '../models/csv-row.model';
 import {ResultRow} from '../models/result-row.model';
 
+import {EvalBackendService} from './eval-backend.service';
 import {StateService} from './state.service';
+
+
+
+interface AssistRequestBody {
+  query: {text: string};
+  generationSpec?: {modelId: string};
+  toolsSpec?: {
+    vertexAiSearchSpec?: {
+      dataStoreSpecs?: Array<{dataStore: string}>;
+    };
+    webGroundingSpec?: {};
+  };
+}
 
 /**
  * Service for evaluation operations calling real APIs.
  */
 @Injectable({providedIn: 'root'})
 export class EvalService {
-  constructor(private stateService: StateService) {}
+  constructor(
+      private readonly stateService: StateService,
+      private readonly evalBackendService: EvalBackendService
+  ) {}
 
   /**
    * Processes a row for evaluation by calling streamAssist API.
@@ -38,23 +55,12 @@ export class EvalService {
   async processRow(row: CSVRow, onProgress?: (step: 'fetch'|'score') => void):
       Promise<ResultRow> {
     const config = this.stateService.getCurrentConfig();
-    const baseUrl = config.region === 'global' ?
-        'discoveryengine.googleapis.com' :
-        `${config.region}-discoveryengine.googleapis.com`;
 
-    const url = `https://${baseUrl}/v1/${
-        config.selectedEngine}/assistants/default_assistant:streamAssist`;
 
-    const body: any = {query: {text: row.query}};
-
-    if (config.selectedModel !== 'auto') {
-      body.generationSpec = {modelId: config.selectedModel};
-    }
-
-    body.toolsSpec = {};
+    const toolsSpec: NonNullable<AssistRequestBody['toolsSpec']> = {};
 
     if (config.selectedDataStores && config.selectedDataStores.length > 0) {
-      body.toolsSpec.vertexAiSearchSpec = {
+      toolsSpec.vertexAiSearchSpec = {
         dataStoreSpecs: config.selectedDataStores.map(
             ds => ({
               dataStore: `projects/${config.projectId}/locations/${
@@ -63,11 +69,20 @@ export class EvalService {
             }))
       };
     } else if (!config.enableWebSearch) {
-      body.toolsSpec.vertexAiSearchSpec = {};
+      toolsSpec.vertexAiSearchSpec = {};
     }
 
     if (config.enableWebSearch) {
-      body.toolsSpec.webGroundingSpec = {};
+      toolsSpec.webGroundingSpec = {};
+    }
+
+    const body: AssistRequestBody = {
+      query: {text: row.query},
+      toolsSpec,
+    };
+
+    if (config.selectedModel !== 'auto') {
+      body.generationSpec = {modelId: config.selectedModel};
     }
 
     const projectId = config.projectId;
@@ -84,13 +99,10 @@ export class EvalService {
 
     try {
       onProgress?.('fetch');
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.gCloudToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
+      const response = await this.evalBackendService.callAssist({
+        selectedEngine: config.selectedEngine,
+        region: config.region,
+        body
       });
 
       if (!response.ok) {
@@ -183,8 +195,7 @@ export class EvalService {
 
       let score = 0;
       let scoreError: string | undefined;
-      if (config.gCloudToken && row.golden) {
-        onProgress?.('score');
+      if (row.golden) {        onProgress?.('score');
         try {
           score =
               await this.scoreResponse(row.query, fullText, row.golden, config);
@@ -238,10 +249,6 @@ export class EvalService {
   async scoreResponse(
       query: string, response: string, golden: string,
       config: AppConfig): Promise<number> {
-    const url = `https://aiplatform.googleapis.com/v1/projects/${
-        config.projectId}/locations/global/publishers/google/models/${
-        config.autoRaterModel}:generateContent`;
-
     const prompt = `${config.autoRaterInstruction}
 
     Query: ${query}
@@ -252,15 +259,11 @@ export class EvalService {
 
     const body = {contents: [{role: 'user', parts: [{text: prompt}]}]};
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.gCloudToken}`,
-        'x-goog-user-project': config.projectId,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
+    const res = await this.evalBackendService.callScore({
+      projectId: config.projectId,
+      region: config.region,
+      model: config.autoRaterModel,
+      body    });
 
     if (!res.ok) {
       let errorMessage = '';
@@ -311,7 +314,7 @@ export class EvalService {
       cleanText = cleanText.trim();
 
       // 4. Try direct parseFloat first
-      let score = parseFloat(cleanText);
+      const score = Number(cleanText);
       if (!isNaN(score)) {
         return score;
       }
@@ -320,7 +323,7 @@ export class EvalService {
       // one
       const matches = cleanText.match(/[0-9]+(?:\.[0-9]+)?/g);
       if (matches && matches.length > 0) {
-        const lastScore = parseFloat(matches[matches.length - 1]);
+        const lastScore = Number(matches[matches.length - 1]);
         return isNaN(lastScore) ? 0 : lastScore;
       }
     }

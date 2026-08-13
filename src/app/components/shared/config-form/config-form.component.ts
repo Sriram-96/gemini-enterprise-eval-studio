@@ -22,6 +22,8 @@ import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig, Engine} from '../../../models/app-config.model';
+import {AuthService} from '../../../services/auth.service';
+import {EvalBackendService} from '../../../services/eval-backend.service';
 import {StateService} from '../../../services/state.service';
 import {InfoTooltipComponent} from '../../shared/info-tooltip/info-tooltip.component';
 
@@ -131,7 +133,6 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   @ViewChild('dropdownContainer') dropdownContainer?: ElementRef;
 
   config: AppConfig = {
-    gCloudToken: '',
     projectId: '',
     region: 'global',
     selectedEngine: '',
@@ -155,10 +156,18 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   connectors: ConnectorOption[] = [];
 
   constructor(
-      private stateService: StateService, private cdr: ChangeDetectorRef,
-      private http: HttpClient) {}
+      private readonly stateService: StateService,
+      private readonly cdr: ChangeDetectorRef,
+      readonly authService: AuthService,
+      private readonly evalBackendService: EvalBackendService,
+      private readonly http: HttpClient
+  ) {}
 
   ngOnInit() {
+    if (!this.authService.showCredentialInputs) {
+      this.autoRaterModels = ['gemini-3.5-flash', 'gemini-3.1-pro'];
+    }
+
     this.stateService.config$.pipe(takeUntil(this.destroy$))
         .subscribe((c: AppConfig) => {
           const engineChanged = this.config.selectedEngine !== c.selectedEngine;
@@ -201,80 +210,65 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   fetchEngines() {
     this.errorMessage = '';
     this.stateService.setErrorMessage('');
-    if (!this.config.gCloudToken || !this.config.projectId) {
-      this.errorMessage = 'Please provide gCloud Token and Project ID';
+    if (!this.config.projectId) {
+      this.errorMessage = 'Please provide Project ID';
       return;
     }
     this.loading = true;
-    const baseUrl = this.config.region === 'global' ?
-        'discoveryengine.googleapis.com' :
-        `${this.config.region}-discoveryengine.googleapis.com`;
-    const url = `https://${baseUrl}/v1alpha/projects/${
-        this.config.projectId}/locations/${
-        this.config.region}/collections/default_collection/engines`;
 
-    this.http
-        .get<EnginesResponse>(url, {
-          headers: {
-            'Authorization': `Bearer ${this.config.gCloudToken}`,
-            'x-goog-user-project': this.config.projectId
-          }
-        })
-        .subscribe({
-          next: (data) => {
-            this.loading = false;
-            if (data.engines) {
-              this.engines =
-                  data.engines.map((e: Engine) => ({
-                                     name: e.name,
-                                     displayName: e.displayName || e.name,
-                                     modelConfigs: e.modelConfigs,
-                                     dataStoreIds: e.dataStoreIds
-                                   }));
+    this.evalBackendService.fetchEngines(this.config.projectId, this.config.region, this.config)
+        .then((engines) => {
+          this.loading = false;
+          if (engines && engines.length > 0) {
+            this.engines = engines.map((e: Engine) => ({
+              name: e.name,
+              displayName: e.displayName || e.name,
+              modelConfigs: e.modelConfigs,
+              dataStoreIds: e.dataStoreIds
+            }));
 
-              this.stateService.setEngines(this.engines);
+            this.stateService.setEngines(this.engines);
 
-              if (this.config.selectedEngine) {
-                const exists = this.engines.some(
-                    e => e.name === this.config.selectedEngine);
-                if (exists) {
-                  this.onEngineChange();
-                } else if (this.engines.length > 0) {
-                  this.config.selectedEngine = this.engines[0].name;
-                  this.onEngineChange();
-                }
+            if (this.config.selectedEngine) {
+              const exists = this.engines.some(
+                  e => e.name === this.config.selectedEngine);
+              if (exists) {
+                this.onEngineChange();
               } else if (this.engines.length > 0) {
                 this.config.selectedEngine = this.engines[0].name;
                 this.onEngineChange();
               }
-
-              this.cdr.detectChanges();
-            } else {
-              this.engines = [];
-              this.stateService.setEngines([]);
-              this.errorMessage = 'No engines found.';
-              this.cdr.detectChanges();
+            } else if (this.engines.length > 0) {
+              this.config.selectedEngine = this.engines[0].name;
+              this.onEngineChange();
             }
-          },
-          error: (error: unknown) => {
-            this.loading = false;
+          } else {
             this.engines = [];
             this.stateService.setEngines([]);
-            console.error('Error fetching engines:', error);
-            let details = 'See console for details.';
-            if (error instanceof HttpErrorResponse) {
-              details = error.error?.error?.message || error.message || details;
-            } else if (error instanceof Error) {
-              details = error.message;
-            } else if (typeof error === 'string') {
-              details = error;
-            }
-            this.errorMessage = `Error fetching engines: ${details}`;
-            this.cdr.detectChanges();
+            this.errorMessage = 'No engines found.';
           }
+          this.cdr.detectChanges();
+        })
+        .catch((error: unknown) => {
+          this.loading = false;
+          this.engines = [];
+          this.stateService.setEngines([]);
+          
+          console.error('Error fetching engines:', error);
+          let details = 'See console for details.';
+          if (error instanceof HttpErrorResponse) {
+            details = error.error?.error?.message || error.message || details;
+          } else if (error instanceof Error) {
+            details = error.message;
+          } else if (typeof error === 'string') {
+            details = error;
+          }
+          this.errorMessage = `Error fetching engines: ${details}`;
+          this.cdr.detectChanges();
         });
   }
 
+  /**
   /**
    * Handles engine selection change, updating available models.
    */
@@ -578,6 +572,9 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
     this.stateService.setEngines([]);
     this.cdr.detectChanges();
   }
+  toggleDropdown() {
+    this.isDropdownOpen = !this.isDropdownOpen;
+  }
 
   @HostListener('document:click', ['$event'])
   clickout(event: Event) {
@@ -585,10 +582,6 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
         !this.dropdownContainer.nativeElement.contains(event.target)) {
       this.isDropdownOpen = false;
     }
-  }
-
-  toggleDropdown() {
-    this.isDropdownOpen = !this.isDropdownOpen;
   }
 
   getAllAvailableConnectors(): ConnectorOption[] {
@@ -624,14 +617,28 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
    * Checks if the form is valid and user can proceed to next step.
    * @returns True if form is valid, false otherwise.
    */
-  canProceed() {
-    const baseValid = this.config.gCloudToken && this.config.projectId &&
-        this.config.selectedEngine && this.config.selectedModel;
-    if (this.isRunQueries) {
-      return baseValid;
+  canProceed(): boolean {
+    const baseValid = !!this.config.projectId &&
+        !!this.config.selectedEngine && !!this.config.selectedModel &&
+        this.engines.length > 0;
+
+    if (!baseValid) {
+      return false;
     }
-    return baseValid && this.config.autoRaterModel;
-  }
+
+    if (this.isRunQueries) {
+      return !this.authService.showCredentialInputs || !!this.config.gCloudToken;
+    }
+
+    if (!this.config.autoRaterModel) {
+      return false;
+    }
+
+    if (this.authService.showCredentialInputs) {
+      return !!this.config.gCloudToken;
+    }
+
+    return true;  }
 
   /**
    * Saves config and emits next event.

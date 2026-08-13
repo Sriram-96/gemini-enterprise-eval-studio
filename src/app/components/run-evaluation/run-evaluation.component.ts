@@ -87,7 +87,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     const config = this.stateService.getCurrentConfig();
     const engines = this.stateService.getEngines();
     const hasValidEngine = engines.some(e => e.name === config.selectedEngine);
-    return !!(config.gCloudToken && config.projectId &&
+    return !!(config.projectId &&
         config.selectedEngine && config.selectedModel &&
         hasValidEngine);
   }
@@ -141,7 +141,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     const results: ResultRow[] = [];
 
     if (this.totalRows === 0) return;
-
     const tasks = event.rows.map(row => async () => {
       if (runId !== this.currentRunId || !this.isProcessing) return;
 

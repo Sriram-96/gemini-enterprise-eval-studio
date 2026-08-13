@@ -20,14 +20,19 @@ import {BehaviorSubject, of} from 'rxjs';
 
 import {AppConfig} from '../../models/app-config.model';
 import {ResultRow} from '../../models/result-row.model';
+import {AuthService} from '../../services/auth.service';
+import {EvalBackendService} from '../../services/eval-backend.service';
 import {EvalService} from '../../services/eval.service';
 import {StateService} from '../../services/state.service';
+import {MockAuthService, MockEvalBackendService} from '../../testing/mocks';
 
 import {RunEvaluationComponent} from './run-evaluation.component';
 
 describe('RunEvaluationComponent', () => {
   let mockStateService: jasmine.SpyObj<StateService>;
   let mockEvalService: jasmine.SpyObj<EvalService>;
+  let mockAuthService: MockAuthService;
+  let mockEvalBackendService: MockEvalBackendService;
   let resultsSubject: BehaviorSubject<ResultRow[]>;
   let configSubject: BehaviorSubject<AppConfig>;
 
@@ -68,13 +73,17 @@ describe('RunEvaluationComponent', () => {
     });
 
     mockEvalService = jasmine.createSpyObj('EvalService', ['processRow', 'scoreResponse']);
+    mockAuthService = new MockAuthService();
+    mockEvalBackendService = new MockEvalBackendService();
 
     await TestBed
         .configureTestingModule({
           imports: [RunEvaluationComponent, HttpClientTestingModule],
           providers: [
             {provide: StateService, useValue: mockStateService},
-            {provide: EvalService, useValue: mockEvalService}
+            {provide: EvalService, useValue: mockEvalService},
+            {provide: AuthService, useValue: mockAuthService},
+            {provide: EvalBackendService, useValue: mockEvalBackendService}
           ]
         })
         .compileComponents();

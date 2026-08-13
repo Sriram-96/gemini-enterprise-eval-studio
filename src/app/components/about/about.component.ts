@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
+import {CommonModule} from '@angular/common';
 import {Component} from '@angular/core';
+
+import {AuthService} from '../../services/auth.service';
 
 /**
  * Component displaying the About tab content.
@@ -22,7 +25,14 @@ import {Component} from '@angular/core';
 @Component({
   selector: 'app-about',
   standalone: true,
+  imports: [CommonModule],
   templateUrl: './about.component.html'
 })
-export class AboutComponent {}
+export class AboutComponent {
+  constructor(readonly authService: AuthService) {}
+
+  get isNoAuthMode(): boolean {
+    return this.authService.showCredentialInputs;
+  }
+}
 

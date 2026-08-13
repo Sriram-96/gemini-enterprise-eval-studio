@@ -71,7 +71,7 @@ export class RunQueriesComponent {
     const config = this.stateService.getCurrentConfig();
     const engines = this.stateService.getEngines();
     const hasValidEngine = engines.some(e => e.name === config.selectedEngine);
-    return !!(config.gCloudToken && config.projectId &&
+    return !!(config.projectId &&
         config.selectedEngine && config.selectedModel &&
         hasValidEngine);
   }

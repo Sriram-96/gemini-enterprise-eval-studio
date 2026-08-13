@@ -15,24 +15,30 @@
  */
 
 import {HttpClient, HttpErrorResponse} from '@angular/common/http';
-import {TestBed} from '@angular/core/testing';
+import {ComponentFixture, TestBed, fakeAsync, tick} from '@angular/core/testing';
 import {BehaviorSubject, of, throwError} from 'rxjs';
 
 import {AppConfig, Engine} from '../../../models/app-config.model';
+import {AuthService} from '../../../services/auth.service';
+import {EvalBackendService} from '../../../services/eval-backend.service';
 import {StateService} from '../../../services/state.service';
+import {MockAuthService, MockEvalBackendService} from '../../../testing/mocks';
 
 import {ConfigFormComponent} from './config-form.component';
 
 describe('ConfigFormComponent', () => {
+  let fixture: ComponentFixture<ConfigFormComponent>;
+  let component: ConfigFormComponent;
   let mockStateService: jasmine.SpyObj<StateService>;
-  let mockHttpClient: jasmine.SpyObj<HttpClient>;
+  let mockAuthService: MockAuthService;
+  let mockEvalBackendService: MockEvalBackendService;
   let configSubject: BehaviorSubject<AppConfig>;
   let enginesSubject: BehaviorSubject<Engine[]>;
   let errorMessageSubject: BehaviorSubject<string>;
+  let mockHttpClient: jasmine.SpyObj<HttpClient>;
 
   beforeEach(async () => {
     configSubject = new BehaviorSubject<AppConfig>({
-      gCloudToken: '',
       projectId: '',
       region: 'global',
       selectedEngine: '',
@@ -60,199 +66,177 @@ describe('ConfigFormComponent', () => {
     mockHttpClient = jasmine.createSpyObj('HttpClient', ['get']);
     mockHttpClient.get.and.returnValue(of({}));
 
+    mockAuthService = new MockAuthService();
+    mockEvalBackendService = new MockEvalBackendService();
+
     await TestBed
         .configureTestingModule({
           imports: [ConfigFormComponent],
           providers: [
             {provide: StateService, useValue: mockStateService},
+            {provide: AuthService, useValue: mockAuthService},
+            {provide: EvalBackendService, useValue: mockEvalBackendService},
             {provide: HttpClient, useValue: mockHttpClient}
           ]
         })
         .compileComponents();
+
+    fixture = TestBed.createComponent(ConfigFormComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
   });
 
   it('should create', () => {
-    const fixture = TestBed.createComponent(ConfigFormComponent);
-    const component = fixture.componentInstance;
     expect(component).toBeTruthy();
   });
 
   describe('fetchEngines', () => {
-    it('should set error message if token or project ID is missing', () => {
-      const fixture = TestBed.createComponent(ConfigFormComponent);
-      const component = fixture.componentInstance;
-      component.config.gCloudToken = '';
+    it('should set error message if project ID is missing', () => {
       component.config.projectId = '';
 
       component.fetchEngines();
 
       expect(component.errorMessage)
-          .toBe('Please provide gCloud Token and Project ID');
+          .toBe('Please provide Project ID');
     });
 
-    it('should fetch engines successfully and auto-select first engine', () => {
-      const fixture = TestBed.createComponent(ConfigFormComponent);
-      const component = fixture.componentInstance;
-      component.config.gCloudToken = 'token';
+    it('should fetch engines successfully and auto-select first engine', fakeAsync(() => {
       component.config.projectId = 'project';
       component.config.region = 'global';
 
-      const mockEnginesResponse = {
-        engines: [
-          {name: 'engine1', displayName: 'Engine 1', modelConfigs: {}},
-          {name: 'engine2', displayName: 'Engine 2', modelConfigs: {}}
-        ]
-      };
+      const mockEngines: Engine[] = [
+        {name: 'engine1', displayName: 'Engine 1', modelConfigs: {}},
+        {name: 'engine2', displayName: 'Engine 2', modelConfigs: {}}
+      ];
 
-      mockHttpClient.get.and.returnValue(of(mockEnginesResponse));
+      mockEvalBackendService.fetchEnginesSpy.and.returnValue(Promise.resolve(mockEngines));
 
       component.fetchEngines();
+      tick();
 
-      expect(mockHttpClient.get)
-          .toHaveBeenCalledWith(
-              'https://discoveryengine.googleapis.com/v1alpha/projects/project/locations/global/collections/default_collection/engines',
-              jasmine.any(Object));
+      expect(mockEvalBackendService.fetchEnginesSpy)
+          .toHaveBeenCalledWith('project', 'global', jasmine.objectContaining({
+            projectId: 'project',
+            region: 'global'
+          }));
       expect(component.engines.length).toBe(2);
       expect(component.config.selectedEngine).toBe('engine1');
-    });
+    }));
 
-    it('should use regional URL when region is not global', () => {
-      const fixture = TestBed.createComponent(ConfigFormComponent);
-      const component = fixture.componentInstance;
-      component.config.gCloudToken = 'token';
+    it('should pass correct region to fetchEngines', fakeAsync(() => {
       component.config.projectId = 'project';
       component.config.region = 'us-central1';
 
-      mockHttpClient.get.and.returnValue(of({engines: []}));
+      mockEvalBackendService.fetchEnginesSpy.and.returnValue(Promise.resolve([]));
 
       component.fetchEngines();
+      tick();
 
-      expect(mockHttpClient.get)
-          .toHaveBeenCalledWith(
-              'https://us-central1-discoveryengine.googleapis.com/v1alpha/projects/project/locations/us-central1/collections/default_collection/engines',
-              jasmine.any(Object));
-    });
+      expect(mockEvalBackendService.fetchEnginesSpy)
+          .toHaveBeenCalledWith('project', 'us-central1', jasmine.objectContaining({
+            projectId: 'project',
+            region: 'us-central1'
+          }));
+    }));
 
-    it('should handle Error when fetching engines', () => {
-      const fixture = TestBed.createComponent(ConfigFormComponent);
-      const component = fixture.componentInstance;
-      component.config.gCloudToken = 'token';
+    it('should handle Error when fetching engines', fakeAsync(() => {
       component.config.projectId = 'project';
 
-      mockHttpClient.get.and.returnValue(
-          throwError(() => new Error('HTTP error')));
+      mockEvalBackendService.fetchEnginesSpy.and.returnValue(
+          Promise.reject(new Error('Fetch error')));
 
       component.fetchEngines();
+      tick();
 
-      expect(component.errorMessage).toBe('Error fetching engines: HTTP error');
+      expect(component.errorMessage).toBe('Error fetching engines: Fetch error');
       expect(component.loading).toBeFalse();
-    });
+    }));
 
-    it('should handle HttpErrorResponse when fetching engines', () => {
-      const fixture = TestBed.createComponent(ConfigFormComponent);
-      const component = fixture.componentInstance;
-      component.config.gCloudToken = 'token';
+    it('should handle HttpErrorResponse when fetching engines', fakeAsync(() => {
       component.config.projectId = 'project';
 
-      mockHttpClient.get.and.returnValue(
-          throwError(() => new HttpErrorResponse({
+      mockEvalBackendService.fetchEnginesSpy.and.returnValue(
+          Promise.reject(new HttpErrorResponse({
             status: 403,
             error: {error: {message: 'Permission denied'}}
           })));
 
       component.fetchEngines();
+      tick();
 
       expect(component.errorMessage)
           .toBe('Error fetching engines: Permission denied');
       expect(component.loading).toBeFalse();
-    });
+    }));
 
-    it('should maintain selected engine if it exists in fetched engines',
-       () => {
-         const fixture = TestBed.createComponent(ConfigFormComponent);
-         const component = fixture.componentInstance;
-         component.config.gCloudToken = 'token';
-         component.config.projectId = 'project';
-         component.config.selectedEngine = 'engine2';
+    it('should maintain selected engine if it exists in fetched engines', fakeAsync(() => {
+      component.config.projectId = 'project';
+      component.config.selectedEngine = 'engine2';
 
-         const mockEnginesResponse = {
-           engines: [
-             {name: 'engine1', displayName: 'Engine 1', modelConfigs: {}},
-             {name: 'engine2', displayName: 'Engine 2', modelConfigs: {}}
-           ]
-         };
+      const mockEngines: Engine[] = [
+        {name: 'engine1', displayName: 'Engine 1', modelConfigs: {}},
+        {name: 'engine2', displayName: 'Engine 2', modelConfigs: {}}
+      ];
 
-         mockHttpClient.get.and.returnValue(of(mockEnginesResponse));
+      mockEvalBackendService.fetchEnginesSpy.and.returnValue(Promise.resolve(mockEngines));
 
-         component.fetchEngines();
+      component.fetchEngines();
+      tick();
 
-         expect(component.config.selectedEngine).toBe('engine2');
-       });
+      expect(component.config.selectedEngine).toBe('engine2');
+    }));
 
-    it('should fallback to first engine if selected engine does not exist in fetched engines',
-       () => {
-         const fixture = TestBed.createComponent(ConfigFormComponent);
-         const component = fixture.componentInstance;
-         component.config.gCloudToken = 'token';
-         component.config.projectId = 'project';
-         component.config.selectedEngine = 'non-existent';
+    it('should fallback to first engine if selected engine does not exist in fetched engines', fakeAsync(() => {
+      component.config.projectId = 'project';
+      component.config.selectedEngine = 'non-existent';
 
-         const mockEnginesResponse = {
-           engines: [
-             {name: 'engine1', displayName: 'Engine 1', modelConfigs: {}},
-             {name: 'engine2', displayName: 'Engine 2', modelConfigs: {}}
-           ]
-         };
+      const mockEngines: Engine[] = [
+        {name: 'engine1', displayName: 'Engine 1', modelConfigs: {}},
+        {name: 'engine2', displayName: 'Engine 2', modelConfigs: {}}
+      ];
 
-         mockHttpClient.get.and.returnValue(of(mockEnginesResponse));
+      mockEvalBackendService.fetchEnginesSpy.and.returnValue(Promise.resolve(mockEngines));
 
-         component.fetchEngines();
+      component.fetchEngines();
+      tick();
 
-         expect(component.config.selectedEngine).toBe('engine1');
-       });
+      expect(component.config.selectedEngine).toBe('engine1');
+    }));
   });
 
   describe('onEngineChange', () => {
-    it('should update models based on selected engine and include defaults',
-       () => {
-         const fixture = TestBed.createComponent(ConfigFormComponent);
-         const component = fixture.componentInstance;
+    it('should update models based on selected engine and include defaults', () => {
+      component.engines = [{
+        name: 'engine1',
+        displayName: 'Engine 1',
+        modelConfigs: {
+          'custom-model': 'MODEL_ENABLED',
+          'disabled-model': 'MODEL_DISABLED'
+        }
+      }];
+      component.config.selectedEngine = 'engine1';
 
-         component.engines = [{
-           name: 'engine1',
-           displayName: 'Engine 1',
-           modelConfigs: {
-             'custom-model': 'MODEL_ENABLED',
-             'disabled-model': 'MODEL_DISABLED'
-           }
-         }];
-         component.config.selectedEngine = 'engine1';
+      component.onEngineChange();
 
-         component.onEngineChange();
+      expect(component.models).toContain('auto');
+      expect(component.models).toContain('custom-model');
+      expect(component.models).not.toContain('disabled-model');
+      expect(component.config.selectedModel).toBe('auto');
+    });
 
-         expect(component.models).toContain('auto');
-         expect(component.models).toContain('custom-model');
-         expect(component.models).not.toContain('disabled-model');
-         expect(component.config.selectedModel).toBe('auto');
-       });
+    it('should clear selectedDataStores upon switching engines in onEngineChange', () => {
+      component.engines = [{
+        name: 'engine1',
+        displayName: 'Engine 1',
+        dataStoreIds: ['ds1', 'ds2']
+      }];
+      component.config.selectedEngine = 'engine1';
+      component.config.selectedDataStores = ['ds1', 'ds3'];
 
-    it('should clear selectedDataStores upon switching engines in onEngineChange',
-       () => {
-         const fixture = TestBed.createComponent(ConfigFormComponent);
-         const component = fixture.componentInstance;
+      component.onEngineChange();
 
-         component.engines = [{
-           name: 'engine1',
-           displayName: 'Engine 1',
-           dataStoreIds: ['ds1', 'ds2']
-         }];
-         component.config.selectedEngine = 'engine1';
-         component.config.selectedDataStores = ['ds1', 'ds3'];
-
-         component.onEngineChange();
-
-         expect(component.config.selectedDataStores).toEqual([]);
-       });
+      expect(component.config.selectedDataStores).toEqual([]);
+    });
 
     it('should include gemini-2.5-pro and gemini-3.5-flash as fallbacks if they are not in modelConfigs',
        () => {
@@ -315,95 +299,103 @@ describe('ConfigFormComponent', () => {
   });
 
   describe('canProceed', () => {
-    it('should return false if base fields are missing', () => {
-      const fixture = TestBed.createComponent(ConfigFormComponent);
-      const component = fixture.componentInstance;
+    beforeEach(() => {
+      mockAuthService.showCredentialInputs = false;
+      component.engines = [{name: 'engine', displayName: 'Engine', modelConfigs: {}}];
+    });
 
+    it('should return false if any required field is missing', () => {
       component.config = {
-        gCloudToken: '',
         projectId: '',
         region: 'global',
-        selectedEngine: '',
-        selectedModel: '',
+        selectedEngine: 'engine',
+        selectedModel: 'model',
         autoRaterModel: 'gemini-3.1-pro-preview',
         autoRaterInstruction: '',
         selectedDataStores: [],
         enableWebSearch: false
       };
+      expect(component.canProceed()).toBeFalsy();
 
+      component.config.projectId = 'project';
+      component.config.selectedEngine = '';
+      expect(component.canProceed()).toBeFalsy();
+
+      component.config.selectedEngine = 'engine';
+      component.config.selectedModel = '';
       expect(component.canProceed()).toBeFalsy();
     });
 
-    it('should return true if base fields are present and isRunQueries is true',
-       () => {
-         const fixture = TestBed.createComponent(ConfigFormComponent);
-         const component = fixture.componentInstance;
-         component.isRunQueries = true;
+    it('should return true if all required fields are present in WIF mode', () => {
+      component.config = {
+        projectId: 'project',
+        region: 'global',
+        selectedEngine: 'engine',
+        selectedModel: 'model',
+        autoRaterModel: 'gemini-3.1-pro-preview',        autoRaterInstruction: '',
+        selectedDataStores: [],
+        enableWebSearch: false
+      };
 
-         component.config = {
-           gCloudToken: 'token',
-           projectId: 'project',
-           region: 'global',
-           selectedEngine: 'engine',
-           selectedModel: 'model',
-           autoRaterModel: 'gemini-3.1-pro-preview',
-           autoRaterInstruction: '',
-           selectedDataStores: [],
-           enableWebSearch: false
-         };
+      expect(component.canProceed()).toBeTruthy();
+    });
 
-         expect(component.canProceed()).toBeTruthy();
-       });
+    describe('with credential inputs enabled (API Key mode)', () => {
+      beforeEach(() => {
+        mockAuthService.showCredentialInputs = true;
+      });
 
+      describe('when isRunQueries is true (Run Queries)', () => {
+        beforeEach(() => {
+          component.isRunQueries = true;
+        });
+        it('should require gCloudToken', () => {
+          component.config = {
+            projectId: 'project',
+            region: 'global',
+            selectedEngine: 'engine',
+            selectedModel: 'model',
+            autoRaterModel: 'gemini-3.1-pro-preview',
+            autoRaterInstruction: '',
+            selectedDataStores: [],
+            enableWebSearch: false,
+            gCloudToken: ''
+          };
 
-    it('should return true if all fields are present and isRunQueries is false',
-       () => {
-         const fixture = TestBed.createComponent(ConfigFormComponent);
-         const component = fixture.componentInstance;
-         component.isRunQueries = false;
+          expect(component.canProceed()).toBeFalsy();
 
-         component.config = {
-           gCloudToken: 'token',
-           projectId: 'project',
-           region: 'global',
-           selectedEngine: 'engine',
-           selectedModel: 'model',
-           autoRaterModel: 'gemini-3.1-pro-preview',
-           autoRaterInstruction: '',
-           selectedDataStores: [],
-           enableWebSearch: false
-         };
+          component.config.gCloudToken = 'token';
+          expect(component.canProceed()).toBeTruthy();
+        });
+      });
+      describe('when isRunQueries is false (Run Evaluation)', () => {
+        beforeEach(() => {
+          component.isRunQueries = false;
+        });
+        it('should require gCloudToken', () => {
+          component.config = {
+            projectId: 'project',
+            region: 'global',
+            selectedEngine: 'engine',
+            selectedModel: 'model',
+            autoRaterModel: 'gemini-3.5-flash',
+            autoRaterInstruction: '',
+            selectedDataStores: [],
+            enableWebSearch: false,
+            gCloudToken: ''
+          };
 
-         expect(component.canProceed()).toBeTruthy();
-       });
+          expect(component.canProceed()).toBeFalsy();
 
-    it('should return false if autoRaterModel is missing and isRunQueries is false',
-       () => {
-         const fixture = TestBed.createComponent(ConfigFormComponent);
-         const component = fixture.componentInstance;
-         component.isRunQueries = false;
-
-         component.config = {
-           gCloudToken: 'token',
-           projectId: 'project',
-           region: 'global',
-           selectedEngine: 'engine',
-           selectedModel: 'model',
-           autoRaterModel: '',
-           autoRaterInstruction: '',
-           selectedDataStores: [],
-           enableWebSearch: false
-         };
-
-         expect(component.canProceed()).toBeFalsy();
-       });
+          component.config.gCloudToken = 'token';
+          expect(component.canProceed()).toBeTruthy();
+        });
+      });
+    });
   });
 
   describe('onConfigChange', () => {
     it('should call stateService.setConfig', () => {
-      const fixture = TestBed.createComponent(ConfigFormComponent);
-      const component = fixture.componentInstance;
-
       component.config.projectId = 'new-project';
       component.onConfigChange();
 
@@ -413,8 +405,6 @@ describe('ConfigFormComponent', () => {
 
   describe('onNext', () => {
     it('should save config and emit next event', () => {
-      const fixture = TestBed.createComponent(ConfigFormComponent);
-      const component = fixture.componentInstance;
       spyOn(component.next, 'emit');
 
       component.onNext();
@@ -440,7 +430,7 @@ describe('ConfigFormComponent', () => {
       // Trigger ngOnInit which subscribes to config$
       fixture.detectChanges();
 
-      expect(component.config.autoRaterModel).toBe('gemini-3.1-pro-preview');
+      expect(component.config.autoRaterModel).toBe('gemini-3.5-flash');
       expect(mockStateService.setConfig).toHaveBeenCalled();
     });
 
@@ -836,5 +826,31 @@ describe('ConfigFormComponent', () => {
          expect(mockStateService.setConfig)
              .toHaveBeenCalledWith(component.config);
        });
+  });
+
+  describe('auth mode', () => {
+    it('should pre-populate autoRaterModels with WIF models in ngOnInit when showCredentialInputs is false', () => {
+      const fixture = TestBed.createComponent(ConfigFormComponent);
+      const component = fixture.componentInstance;
+      const authService = TestBed.inject(AuthService) as MockAuthService;
+      authService.showCredentialInputs = false;
+
+      fixture.detectChanges();
+
+      expect(component.autoRaterModels).toEqual(['gemini-3.5-flash', 'gemini-3.1-pro']);
+      expect(component.config.autoRaterModel).toBe('gemini-3.5-flash');
+    });
+
+    it('should pre-populate autoRaterModels with default models in ngOnInit when showCredentialInputs is true', () => {
+      const fixture = TestBed.createComponent(ConfigFormComponent);
+      const component = fixture.componentInstance;
+      const authService = TestBed.inject(AuthService) as MockAuthService;
+      authService.showCredentialInputs = true;
+
+      fixture.detectChanges();
+
+      expect(component.autoRaterModels).toEqual(['gemini-3.1-pro-preview', 'gemini-3.5-flash']);
+      expect(component.config.autoRaterModel).toBe('gemini-3.1-pro-preview');
+    });
   });
 });

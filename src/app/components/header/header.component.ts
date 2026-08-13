@@ -19,6 +19,7 @@ import {Component} from '@angular/core';
 import {Observable} from 'rxjs';
 import {map} from 'rxjs/operators';
 
+import {AuthService} from '../../services/auth.service';
 import {StateService} from '../../services/state.service';
 
 /**
@@ -35,8 +36,15 @@ export class HeaderComponent {
   /** Observable of the mapped title string for the current active tab. */
   tabTitle$: Observable<string>;
 
-  constructor(public stateService: StateService) {
+  constructor(
+      public readonly stateService: StateService,
+      public readonly authService: AuthService
+  ) {
     this.tabTitle$ = this.stateService.currentTab$.pipe(map(tab => this.getTabTitle(tab)));
+  }
+
+  logout() {
+    this.authService.logout();
   }
 
   /**

@@ -51,7 +51,6 @@ export class StateService {
 
   private loadInitialConfig(): AppConfig {
     const defaultConfig: AppConfig = {
-      gCloudToken: '',
       projectId: '',
       region: 'global',
       selectedEngine: '',
