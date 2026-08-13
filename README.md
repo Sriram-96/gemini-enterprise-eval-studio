@@ -100,7 +100,7 @@ In No-Auth Mode, the application operates as a standalone frontend-only web appl
 To run the application locally using `npm`, first install dependencies:
 
 ```sh
-npm install
+npm ci
 ```
 
 Then start the server in either **Auth Mode** (full stack) or **No-Auth Mode** (client-side frontend only):
