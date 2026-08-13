@@ -46,21 +46,44 @@ architecture:
     are governed solely by the customer's existing agreements with Google Cloud
     for the specific APIs used (e.g., Vertex AI APIs).
 
-## Prerequisites
+## Prerequisites & Setup
 
-Before running the application, you will need the following:
+Gemini Enterprise Eval Studio supports two operational modes depending on your environment:
 
+- **Auth Mode (Production / Team Deployment)**: Users authenticate via Google Workspace (Google Identity) or external Identity Providers (OIDC / SAML) using Workforce Identity Federation. Sessions are encrypted, and server-side refresh token persistence in Firestore is supported for **Google Workspace (`google_identity`)** and **OIDC (`3p_oidc`)** providers to extend sessions beyond 1 hour. Note: **SAML (`3p_saml`) providers do not support refresh tokens**; SAML sessions expire after 1 hour and require re-authentication.
+- **No-Auth Mode (Client-Side / Quick Testing)**: The application runs as a **frontend-only site** without a backend server. Users authenticate by directly inputting a temporary Google Cloud access token into the UI.
 
-1. **Enable Agent Platform API in your GCP project**: In the Google Cloud Console, navigate to "APIs & Services" > "Library", search for "Agent Platform API", and enable it.
+### 1. Common Prerequisites (API Enablement)
 
-2. **Enable Discovery Engine API in your GCP project**: In the Google Cloud Console, navigate to "APIs & Services" > "Library", search for "Discovery Engine API", and enable it.
+In the Google Cloud Console, navigate to **APIs & Services > Library** and enable the following APIs for your GCP project:
+1. **Agent Platform API** (`agentplatform.googleapis.com`)
+2. **Discovery Engine API** (`discoveryengine.googleapis.com`)
 
-3.  **Google Cloud Access Token**: Obtain a temporary access token by running the following command in your terminal (you can open Cloud Shell using the terminal icon on the top right of the Google Cloud Console home page):
+### 2. Auth Mode Setup
+
+1. **Identity Provider Credentials**:
+   - **Google Workspace (`google_identity`)**: [Create an OAuth 2.0 Client ID](https://cloud.google.com/iam/docs/creating-managing-oauth-clients) in your Google Cloud Console. Set the Authorized Redirect URIs to include `http://localhost:3000/auth/callback` (or your production domain).
+   - **Third-Party Providers (`3p_oidc` / `3p_saml`)**: [Set up Workforce Identity Federation (WIF)](https://cloud.google.com/iam/docs/workforce-identity-federation) in GCP by creating a Workforce Pool and Provider. Register an OIDC or SAML application in your external IdP (e.g., Okta, Entra ID) and set the callback URI to `http://localhost:3000/auth/callback`.
+2. **Secret Manager (Optional but recommended)**:
+   - Store your OAuth client secret and session encryption key in GCP Secret Manager and use their URIs in `config.json`.
+3. **Application Configuration (`config.json`)**:
+   - Create a `config.json` file in the root directory based on `config.json.example`.
+   - Configure `session_config.encryption_key_secret` (can be a 32-character string for local dev) and your `auth_providers` array.
+   - *(Optional)* Configure `firestore_config` to enable server-side refresh token storage in Firestore (requires a database created in **Firestore Native mode**), extending user sessions beyond 1 hour for Google Identity and OIDC providers.
+   - *(Optional)* Configure `trusted_hosts` array to allowlist custom hostnames for authentication redirects.
+
+### 3. No-Auth Mode Setup
+
+In No-Auth Mode, the application operates as a standalone frontend-only web application without requiring a backend server or identity provider configuration.
+
+1. Obtain a temporary Google Cloud access token by running the following command in your terminal (or open Cloud Shell using the terminal icon on the top right of the Google Cloud Console):
 
     ```sh
     gcloud auth print-access-token
     ```
     *Note: Access tokens are short-lived and will need to be refreshed periodically.*
+
+2. Input the generated access token directly into the configuration screen in the application's UI.
 
     <p align="center">
       <img src="src/assets/cloud_shell_icon.png" alt="Cloud Shell Terminal Button" />
@@ -70,23 +93,22 @@ Before running the application, you will need the following:
 
 ## Running Locally
 
-To run the development server using npm and Angular CLI:
+To run the application locally using `npm`, first install dependencies:
 
-1.  **Install dependencies**:
-    ```sh
-    npm install
-    ```
+```sh
+npm install
+```
 
-2.  **Start the development server**:
-    ```sh
-    npm start
-    ```
-    or if you have `@angular/cli` installed globally:
-    ```sh
-    ng serve
-    ```
-    By default, it listens on port 4200. To serve on a different port, use the
-    `--port` option:
-    ```sh
-    ng serve --port 8080
-    ```
+Then start the server in either **Auth Mode** (full stack) or **No-Auth Mode** (client-side frontend only):
+
+- **Running in Auth Mode (Full Stack with Backend Express Server)**:
+  ```sh
+  npm run start:auth
+  ```
+  This starts both the Node.js Express backend server (default port 3000) and the Angular frontend development server configured to proxy API requests to the backend.
+
+- **Running in No-Auth Mode (Client-Side Frontend Only)**:
+  ```sh
+  npm run start:no-auth
+  ```
+  By default, the frontend listens on port 4200.

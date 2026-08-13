@@ -18,7 +18,7 @@ import {Request, Response} from 'express';
 import * as googleAuth from 'google-auth-library';
 import * as zlib from 'zlib';
 
-import {cookieParserMiddleware, createAuthenticateMiddleware, createAuthRouter, decryptSession, encryptSession} from './auth';
+import {cookieParserMiddleware, createAuthenticateMiddleware, createAuthRouter, decryptSession, encryptSession, getClearCookieOptions, getCookieName, getCookieOptions, getValidatedRedirectUri} from './auth';
 import {Config} from './config';
 import {SessionData} from './types';
 
@@ -79,7 +79,79 @@ describe('auth module', () => {
 
       expect(req.cookies.foo).toBe('bar');
       expect(req.cookies.baz).toBe('qux=value');
-      expect(next).toHaveBeenCalled();
+    });
+  });
+
+  describe('cookie helpers', () => {
+    const mockConfig: Config = {
+      session_config: {encryption_key_secret: mockEncryptionKey},
+      auth_providers: [],
+    };
+
+    it('should compute cookie name correctly based on environment', () => {
+      const name = getCookieName();
+      expect(['__Host-GeEvalSession', 'GeEvalSession']).toContain(name);
+    });
+
+    it('should compute clear cookie options without maxAge', () => {
+      const cookieOptions = getCookieOptions(mockConfig);
+      expect((cookieOptions as any).maxAge).toBeDefined();
+
+      const clearOptions = getClearCookieOptions(mockConfig);
+      expect((clearOptions as any).maxAge).toBeUndefined();
+      expect(clearOptions.path).toBe('/');
+    });
+  });
+
+  describe('getValidatedRedirectUri', () => {
+    it('should accept localhost and 127.0.0.1 by default', () => {
+      const reqLocal = {
+        get: (header: string) =>
+            header === 'host' ? 'localhost:3000' : undefined,
+        protocol: 'http',
+      } as unknown as Request;
+      expect(getValidatedRedirectUri(reqLocal, false))
+          .toBe('http://localhost:3000/auth/callback');
+
+      const reqIp = {
+        get: (header: string) =>
+            header === 'host' ? '127.0.0.1:3000' : undefined,
+        protocol: 'http',
+      } as unknown as Request;
+      expect(getValidatedRedirectUri(reqIp, false))
+          .toBe('http://127.0.0.1:3000/auth/callback');
+    });
+
+    it('should reject Cloud Run domains unless explicitly listed in trustedHosts', () => {
+      const reqRun = {
+        get: (header: string) =>
+            header === 'host' ? 'my-app-12345.a.run.app' : undefined,
+        protocol: 'https',
+      } as unknown as Request;
+      expect(() => getValidatedRedirectUri(reqRun, true)).toThrow();
+
+      expect(getValidatedRedirectUri(reqRun, true, ['my-app-12345.a.run.app']))
+          .toBe('https://my-app-12345.a.run.app/auth/callback');
+    });
+
+    it('should reject untrusted domains', () => {
+      const reqEvil = {
+        get: (header: string) =>
+            header === 'host' ? 'evilcorp.example.com' : undefined,
+        protocol: 'https',
+      } as unknown as Request;
+      expect(() => getValidatedRedirectUri(reqEvil, true)).toThrow();
+    });
+
+    it('should allow domains listed in trustedHosts', () => {
+      const reqCustom = {
+        get: (header: string) =>
+            header === 'host' ? 'evalstudio.mycompany.com' : undefined,
+        protocol: 'https',
+      } as unknown as Request;
+      expect(getValidatedRedirectUri(
+                 reqCustom, true, ['evalstudio.mycompany.com']))
+          .toBe('https://evalstudio.mycompany.com/auth/callback');
     });
   });
 

@@ -30,5 +30,17 @@
       "gcp_pool_id": "YOUR_WORKFORCE_POOL_ID",
       "gcp_provider_id": "YOUR_WORKFORCE_PROVIDER_ID"
     }
+  ],
+  "// Note": "Optional. If configured, refresh tokens will be stored in Firestore (must be configured in Firestore Native mode) to extend sessions beyond 1 hour for Google Workspace (google_identity) and OIDC (3p_oidc) providers. SAML (3p_saml) providers do not support refresh tokens. If the collectionId does not exist, Firestore will automatically create it upon first write.",
+  "firestore_config": {
+    "projectId": "YOUR_GCP_PROJECT_ID",
+    "databaseId": "YOUR_FIRESTORE_DATABASE_ID",
+    "collectionId": "refresh_tokens",
+    "// Note": "Optional. If not set, default ttlSeconds is 7 days.",
+    "ttlSeconds": 604800
+  },
+  "// Note": "Optional. List of trusted hostnames for the application.",
+  "trusted_hosts": [
+    "YOUR_CUSTOM_DOMAIN.com"
   ]
 }

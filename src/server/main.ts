@@ -21,8 +21,9 @@ import express = require('express');
 
 import {createAuthRouter, cookieParserMiddleware} from './auth';
 import {createProxyRouter} from './proxy';
-import {loadConfig} from './config';
+import {loadConfig, Config} from './config';
 import {logger} from './logger';
+import {FirestoreRefreshTokenStore} from './store';
 
 async function startServer() {
   const app = express();
@@ -52,12 +53,29 @@ async function startServer() {
 
   logger.info(`Loading configuration from: ${configPath}`);
 
-  let config;
+  let config: Config;
   try {
     config = await loadConfig(configPath);
   } catch (err) {
     logger.error('Critical: Failed to load configuration on startup:', err);
     process.exit(1);
+  }
+
+  let refreshTokenStore: FirestoreRefreshTokenStore | undefined;
+  if (config.firestore_config) {
+    logger.info('Firestore configuration found. Initializing FirestoreRefreshTokenStore.');
+    try {
+      refreshTokenStore = new FirestoreRefreshTokenStore(
+        config.firestore_config.projectId,
+        config.firestore_config.databaseId,
+        config.firestore_config.collectionId
+      );
+      await refreshTokenStore.setTtlPolicy();
+    } catch (err) {
+      logger.error('Failed to initialize FirestoreRefreshTokenStore:', err);
+    }
+  } else {
+    logger.info('No Firestore configuration found. Running without refresh token support.');
   }
 
   // Register common middlewares
@@ -71,10 +89,10 @@ async function startServer() {
   });
 
   // Register authentication endpoints
-  app.use(createAuthRouter(config));
+  app.use(createAuthRouter(config, refreshTokenStore));
 
   // Register proxy endpoints
-  app.use(createProxyRouter(config));
+  app.use(createProxyRouter(config, refreshTokenStore));
 
   // Determine path to client static assets
   let staticPath = process.env['STATIC_ASSETS_PATH'];

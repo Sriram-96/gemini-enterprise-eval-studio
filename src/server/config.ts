@@ -56,6 +56,13 @@ const AuthProviderSchema = z.discriminatedUnion('type', [
   OidcSchema,
 ]);
 
+const FirestoreConfigSchema = z.object({
+  projectId: z.string(),
+  databaseId: z.string(),
+  collectionId: z.string(),
+  ttlSeconds: z.number().optional(),
+}).passthrough();
+
 export const SessionConfigSchema = z.object({
   encryption_key_secret: z.string(),
 }).passthrough();
@@ -63,9 +70,12 @@ export const SessionConfigSchema = z.object({
 export const ConfigSchema = z.object({
   session_config: SessionConfigSchema,
   auth_providers: z.array(AuthProviderSchema),
+  firestore_config: FirestoreConfigSchema.optional(),
+  trusted_hosts: z.array(z.string()).optional(),
 }).passthrough();
 
 export type SessionConfig = z.infer<typeof SessionConfigSchema>;
+export type FirestoreConfig = z.infer<typeof FirestoreConfigSchema>;
 export type AuthProvider = z.infer<typeof AuthProviderSchema>;
 export type Config = z.infer<typeof ConfigSchema>;
 

@@ -21,11 +21,7 @@ import { google } from 'googleapis';
 import { loadConfig } from './config';
 
 describe('config parser', () => {
-  beforeEach(() => {
-    // Reset the lazy-loaded client before each test to ensure clean initialization
-    // We can access it if we export it, but since it's module-private, we can just let it be.
-    // However, since spyOn resets after each test, it's fine.
-  });
+  beforeEach(() => {});
 
   it('should parse a valid config file directly without initializing Secret Manager if no URIs present', async () => {
     const mockConfig = {

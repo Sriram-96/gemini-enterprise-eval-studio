@@ -21,6 +21,8 @@ import {IdentityPoolClient, OAuth2Client} from 'google-auth-library';
 import * as zlib from 'zlib';
 
 import {AuthProvider, Config} from './config';
+import {logger} from './logger';
+import {RefreshTokenStore} from './store';
 import {SessionData} from './types';
 
 /**
@@ -31,16 +33,15 @@ function deriveKey(secret: string): Uint8Array {
 }
 
 /**
- * Encrypts session data using AES-256-GCM.
+ * Encrypts a string using AES-256-GCM.
  */
-export function encryptSession(
-    sessionData: SessionData, encryptionKey: string): string {
+export function encryptText(text: string, encryptionKey: string): string {
   const key = deriveKey(encryptionKey);
   const iv = nodeCrypto.randomBytes(12);
   const cipher = nodeCrypto.createCipheriv(
       'aes-256-gcm', Uint8Array.from(key), Uint8Array.from(iv));
 
-  let encrypted = cipher.update(JSON.stringify(sessionData), 'utf8', 'hex');
+  let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
   const authTag = cipher.getAuthTag().toString('hex');
 
@@ -48,13 +49,12 @@ export function encryptSession(
 }
 
 /**
- * Decrypts session data using AES-256-GCM.
+ * Decrypts an AES-256-GCM encrypted string.
  */
-export function decryptSession(
-    encryptedSession: string, encryptionKey: string): SessionData {
-  const [ivHex, tagHex, encryptedHex] = encryptedSession.split(':');
+export function decryptText(encryptedText: string, encryptionKey: string): string {
+  const [ivHex, tagHex, encryptedHex] = encryptedText.split(':');
   if (!ivHex || !encryptedHex || !tagHex) {
-    throw new Error('Invalid session cookie format');
+    throw new Error('Invalid encrypted text format');
   }
 
   const key = deriveKey(encryptionKey);
@@ -68,11 +68,27 @@ export function decryptSession(
   let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
 
+  return decrypted;
+}
+
+/**
+ * Encrypts session data using AES-256-GCM.
+ */
+export function encryptSession(
+    sessionData: SessionData, encryptionKey: string): string {
+  return encryptText(JSON.stringify(sessionData), encryptionKey);
+}
+
+/**
+ * Decrypts session data using AES-256-GCM.
+ */
+export function decryptSession(
+    encryptedSession: string, encryptionKey: string): SessionData {
+  const decrypted = decryptText(encryptedSession, encryptionKey);
   return JSON.parse(decrypted) as SessionData;
 }
 
-const TRUSTED_HOST_PATTERN =
-    /^([a-z0-9-]+-[a-z0-9-]+\.a\.run\.app|.*\.corp\.google\.com|localhost(:\d+)?)$/i;
+const TRUSTED_HOST_PATTERN = /^(localhost|127\.0\.0\.1)(:\d+)?$/i;
 
 /**
  * Escapes special XML characters to prevent XML injection.
@@ -93,13 +109,16 @@ export function escapeXml(unsafe: string): string {
 /**
  * Validates the Host header and builds the canonical redirect URI for authentication.
  */
-export function getValidatedRedirectUri(req: Request, isProd: boolean): string {
+export function getValidatedRedirectUri(
+    req: Request, isProd: boolean, trustedHosts?: string[]): string {
   if (process.env['BASE_URL']) {
     return `${process.env['BASE_URL'].replace(/\/$/, '')}/auth/callback`;
   }
 
   const host = req.get('host');
-  if (!host || !TRUSTED_HOST_PATTERN.test(host)) {
+  const isTrustedHost = host &&
+      (TRUSTED_HOST_PATTERN.test(host) || trustedHosts?.includes(host));
+  if (!isTrustedHost) {
     throw new Error(`Untrusted or invalid Host header: ${host}`);
   }
 
@@ -134,21 +153,215 @@ export function cookieParserMiddleware(
 }
 
 /**
- * Middleware to authenticate requests, verifying and automatically
- * refreshing the Google OAuth2 access token if needed.
+ * Computes the session cookie name based on environment.
  */
-export function createAuthenticateMiddleware(config: Config) {
-  const sessionConfig = config.session_config;
-  const encryptionKey = sessionConfig.encryption_key_secret;
+export function getCookieName(): string {
   const isProd = process.env['NODE_ENV'] === 'production';
-  const cookieName = isProd ? '__Host-GeEvalSession' : 'GeEvalSession';
-  const cookieOptions = {
+  return isProd ? '__Host-GeEvalSession' : 'GeEvalSession';
+}
+
+/**
+ * Computes Express cookie options based on environment and provider type.
+ */
+export function getCookieOptions(
+    config: Config, providerType?: string,
+    refreshTokenStore?: RefreshTokenStore) {
+  const isProd = process.env['NODE_ENV'] === 'production';
+  const ttlSeconds = config.firestore_config?.ttlSeconds || 604800;
+  const isLongLived = !!refreshTokenStore &&
+      (providerType === 'google_identity' || providerType === '3p_oidc');
+  const maxAge = isLongLived ? ttlSeconds * 1000 : 3600000;
+
+  return {
     httpOnly: true,
     secure: isProd,
     sameSite: 'lax' as const,
     path: '/',
-    maxAge: 3600000, // 1 hour
+    maxAge,
   };
+}
+
+/**
+ * Computes Express cookie options for clearing a session cookie by omitting maxAge.
+ */
+export function getClearCookieOptions(config: Config) {
+  const {maxAge, ...clearOptions} = getCookieOptions(config);
+  return clearOptions;
+}
+
+/**
+ * Middleware to authenticate requests, verifying and automatically
+ * refreshing the Google OAuth2 access token if needed.
+ */
+/**
+ * Silently refreshes a 3P OIDC access token using a stored refresh token.
+ */
+async function refreshOidcToken(
+    session: SessionData,
+    provider: Extract<AuthProvider, {type: '3p_oidc'}>,
+    config: Config,
+    encryptionKey: string,
+    refreshTokenStore?: RefreshTokenStore,
+): Promise<SessionData|null> {
+  const userId = session.user.id || session.user.email;
+  if (!refreshTokenStore || !userId) {
+    return null;
+  }
+
+  try {
+    let oidcRefreshToken = await refreshTokenStore.getRefreshToken(userId);
+    if (!oidcRefreshToken) return null;
+
+    try {
+      oidcRefreshToken = decryptText(oidcRefreshToken, encryptionKey);
+    } catch (decErr) {
+      logger.error('Failed to decrypt retrieved OIDC refresh token:', decErr);
+      return null;
+    }
+
+    const discoveryRes = await fetch(`${provider.idp_issuer_url}/.well-known/openid-configuration`);
+    if (!discoveryRes.ok) return null;
+    const discovery = await discoveryRes.json();
+
+    const tokenRes = await fetch(discovery.token_endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization':
+            'Basic ' +
+            Buffer.from(`${provider.client_id}:${provider.client_secret_secret}`).toString('base64'),
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: oidcRefreshToken,
+      }).toString(),
+    });
+
+    if (!tokenRes.ok) return null;
+    const tokenData = await tokenRes.json();
+    const newIdToken = tokenData.id_token;
+
+    if (tokenData.refresh_token) {
+      const ttl = config.firestore_config?.ttlSeconds || 604800;
+      const encryptedToken = encryptText(tokenData.refresh_token, encryptionKey);
+      await refreshTokenStore.saveRefreshToken(userId, encryptedToken, ttl);
+    }
+
+    if (!newIdToken) return null;
+
+    const client = new IdentityPoolClient({
+      type: 'external_account',
+      audience: `//iam.googleapis.com/locations/global/workforcePools/${provider.gcp_pool_id}/providers/${provider.gcp_provider_id}`,
+      subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
+      token_url: 'https://sts.googleapis.com/v1/token',
+      subject_token_supplier: {
+        getSubjectToken: async () => newIdToken,
+      },
+    });
+
+    const {token: newAccessToken} = await client.getAccessToken();
+    if (!newAccessToken) return null;
+
+    return {
+      ...session,
+      token: {
+        access_token: newAccessToken,
+        expiry_date: client.credentials?.expiry_date,
+      },
+    };
+  } catch (refreshErr) {
+    logger.error('Failed to silently refresh 3p OIDC token:', refreshErr);
+    return null;
+  }
+}
+
+/**
+ * Verifies and automatically refreshes Google OAuth2 tokens.
+ */
+async function refreshGoogleIdentityToken(
+    session: SessionData,
+    provider: Extract<AuthProvider, {type: 'google_identity'}>,
+    config: Config,
+    encryptionKey: string,
+    refreshTokenStore?: RefreshTokenStore,
+): Promise<{session: SessionData; tokensRefreshed: boolean}> {
+  const oauth2Client = new OAuth2Client(provider.client_id, provider.client_secret_secret);
+  const credentials: any = {...session.token};
+  const userId = session.user.id || session.user.email;
+
+  if (refreshTokenStore && userId) {
+    try {
+      const rawRefreshToken = await refreshTokenStore.getRefreshToken(userId);
+      if (rawRefreshToken) {
+        try {
+          credentials.refresh_token = decryptText(rawRefreshToken, encryptionKey);
+        } catch (decErr) {
+          logger.error('Failed to decrypt retrieved Google refresh token:', decErr);
+        }
+      }
+    } catch (storeErr) {
+      logger.error('Failed to retrieve refresh token from store:', storeErr);
+    }
+  }
+
+  oauth2Client.setCredentials(credentials);
+
+  let tokensRefreshed = false;
+  let refreshedTokens: any = {...session.token};
+  oauth2Client.on('tokens', async (newTokens) => {
+    refreshedTokens = {...refreshedTokens, ...newTokens};
+    tokensRefreshed = true;
+
+    if (refreshTokenStore && userId && newTokens.refresh_token) {
+      try {
+        const ttl = config.firestore_config?.ttlSeconds || 604800;
+        const encryptedToken = encryptText(newTokens.refresh_token, encryptionKey);
+        await refreshTokenStore.saveRefreshToken(userId, encryptedToken, ttl);
+      } catch (storeErr) {
+        logger.error('Failed to save refreshed token to store:', storeErr);
+      }
+    }
+  });
+
+  let freshAccessToken: string | null | undefined;
+  try {
+    const tokenRes = await oauth2Client.getAccessToken();
+    freshAccessToken = tokenRes.token;
+  } catch (err) {
+    if (session.token.access_token && session.token.expiry_date && Date.now() < session.token.expiry_date) {
+      return {session, tokensRefreshed: false};
+    }
+    throw err;
+  }
+
+  if (!freshAccessToken) {
+    if (session.token.access_token && session.token.expiry_date && Date.now() < session.token.expiry_date) {
+      return {session, tokensRefreshed: false};
+    }
+    throw new Error('Failed to obtain fresh access token.');
+  }
+
+  const {refresh_token, ...tokensToStore} = refreshedTokens;
+  const updatedSession: SessionData = {
+    ...session,
+    token: {
+      ...(tokensRefreshed ? tokensToStore : session.token),
+      access_token: freshAccessToken,
+    },
+  };
+
+  return {session: updatedSession, tokensRefreshed};
+}
+
+/**
+ * Middleware to authenticate requests, verifying and automatically
+ * refreshing the Google OAuth2 access token if needed.
+ */
+export function createAuthenticateMiddleware(
+    config: Config, refreshTokenStore?: RefreshTokenStore) {
+  const sessionConfig = config.session_config;
+  const encryptionKey = sessionConfig.encryption_key_secret;
+  const cookieName = getCookieName();
 
   return async (req: Request, res: Response, next: NextFunction) => {
     const encryptedSession = req.cookies?.[cookieName];
@@ -159,58 +372,62 @@ export function createAuthenticateMiddleware(config: Config) {
 
     try {
       const session = decryptSession(encryptedSession, encryptionKey);
-
       const provider = session.providerId ?
           config.auth_providers.find(p => p.id === session.providerId) :
           config.auth_providers.find(p => p.type === 'google_identity');
 
-      if (!provider || provider.type !== 'google_identity') {
-        if (session.token.expiry_date &&
-            Date.now() >= session.token.expiry_date) {
-          throw new Error(
-              'Access token expired for non-google_identity provider.');
+      if (!provider) {
+        throw new Error('Authentication provider not found for session.');
+      }
+
+      const cookieOptions =
+          getCookieOptions(config, provider.type, refreshTokenStore);
+
+      if (provider.type === '3p_oidc') {
+        if (refreshTokenStore) {
+          const isNearExpiry = session.token.expiry_date &&
+              (Date.now() >= session.token.expiry_date - 60000);
+          if (isNearExpiry) {
+            const updatedSession = await refreshOidcToken(
+                session, provider, config, encryptionKey, refreshTokenStore);
+            if (!updatedSession) {
+              throw new Error('Access token expired for 3p_oidc provider.');
+            }
+            res.cookie?.(
+                cookieName, encryptSession(updatedSession, encryptionKey),
+                cookieOptions);
+            req.session = updatedSession;
+          } else {
+            req.session = session;
+          }
+        } else {
+          req.session = session;
         }
-        req.session = session;
         next();
         return;
       }
 
-      const oauth2Client = new OAuth2Client(
-          provider.client_id, provider.client_secret_secret);
-      oauth2Client.setCredentials(session.token);
-
-      let tokensRefreshed = false;
-      let refreshedTokens = {...session.token};
-      oauth2Client.on('tokens', (newTokens) => {
-        refreshedTokens = {...refreshedTokens, ...newTokens};
-        tokensRefreshed = true;
-      });
-
-      const tokenRes = await oauth2Client.getAccessToken();
-      const freshAccessToken = tokenRes.token;
-
-      if (!freshAccessToken) {
-        throw new Error('Failed to obtain fresh access token.');
+      if (provider.type === 'google_identity') {
+        const {session: updatedSession, tokensRefreshed} =
+            await refreshGoogleIdentityToken(
+                session, provider, config, encryptionKey, refreshTokenStore);
+        if (tokensRefreshed) {
+          res.cookie?.(
+              cookieName, encryptSession(updatedSession, encryptionKey),
+              cookieOptions);
+        }
+        req.session = updatedSession;
+        next();
+        return;
       }
 
-      if (tokensRefreshed) {
-        const updatedSession = {
-          ...session,
-          token: refreshedTokens,
-        };
-        const newEncryptedSession =
-            encryptSession(updatedSession, encryptionKey);
-        res.cookie(cookieName, newEncryptedSession, cookieOptions);
+      if (session.token.expiry_date && Date.now() >= session.token.expiry_date) {
+        throw new Error(`Access token expired for ${provider.type} provider.`);
       }
-
-      session.token = {
-        ...session.token,
-        access_token: freshAccessToken
-      };
       req.session = session;
       next();
     } catch (err) {
-      res.clearCookie(cookieName, cookieOptions);
+      res.clearCookie?.(cookieName, getClearCookieOptions(config));
       res.status(401).json({error: 'Unauthorized: Session invalid or expired'});
     }
   };
@@ -219,20 +436,13 @@ export function createAuthenticateMiddleware(config: Config) {
 /**
  * Factory for creating the authentication Express router.
  */
-export function createAuthRouter(config: Config): Router {
+export function createAuthRouter(
+    config: Config, refreshTokenStore?: RefreshTokenStore): Router {
   const router = Router();
   const sessionConfig = config.session_config;
   const encryptionKey = sessionConfig.encryption_key_secret;
-
   const isProd = process.env['NODE_ENV'] === 'production';
-  const cookieName = isProd ? '__Host-GeEvalSession' : 'GeEvalSession';
-  const cookieOptions = {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: 'lax' as const,
-    path: '/',
-    maxAge: 3600000, // 1 hour
-  };
+  const cookieName = getCookieName();
 
   const stateCookieName = isProd ? '__Host-GeEvalState' : 'GeEvalState';
   const stateCookieOptions = {
@@ -281,7 +491,8 @@ export function createAuthRouter(config: Config): Router {
 
     let redirectUri: string;
     try {
-      redirectUri = getValidatedRedirectUri(req, isProd);
+      redirectUri =
+          getValidatedRedirectUri(req, isProd, config.trusted_hosts);
     } catch (err) {
       res.status(400).send((err as Error).message);
       return;
@@ -292,12 +503,12 @@ export function createAuthRouter(config: Config): Router {
           provider.client_id, provider.client_secret_secret, redirectUri);
 
       const authUrl = oauth2Client.generateAuthUrl({
-        access_type: 'offline',
+        access_type: refreshTokenStore ? 'offline' : 'online',
         scope: [
           'openid', 'email', 'https://www.googleapis.com/auth/cloud-platform'
         ],
-        prompt: 'select_account',
-        state: state,
+        prompt: refreshTokenStore ? 'consent select_account' : 'select_account',
+        state,
       });
 
       res.status(302).setHeader('Location', authUrl).end();
@@ -339,9 +550,10 @@ export function createAuthRouter(config: Config): Router {
         const params = new URLSearchParams({
           client_id: provider.client_id || '',
           response_type: 'code',
-          scope: 'openid email',
+          scope: refreshTokenStore ? 'openid email offline_access' :
+                                     'openid email',
           redirect_uri: redirectUri,
-          state: state
+          state,
         });
         res.status(302).setHeader('Location', `${discovery.authorization_endpoint}?${params.toString()}`).end();
       } catch (err) {
@@ -412,7 +624,8 @@ export function createAuthRouter(config: Config): Router {
     }
 
     try {
-      const redirectUri = getValidatedRedirectUri(req, isProd);
+      const redirectUri =
+          getValidatedRedirectUri(req, isProd, config.trusted_hosts);
       let sessionData: SessionData;
 
       if (provider.type === 'google_identity') {
@@ -431,6 +644,21 @@ export function createAuthRouter(config: Config): Router {
         }
         const userInfo = await userInfoRes.json() as
             {email?: string, name?: string, id?: string};
+
+        const userId = userInfo.id || userInfo.email;
+        if (refreshTokenStore && userId && tokens.refresh_token) {
+          try {
+            const ttl = config.firestore_config?.ttlSeconds ||
+                604800;  // 7 days default
+            const encryptedToken =
+                encryptText(tokens.refresh_token, encryptionKey);
+            await refreshTokenStore.saveRefreshToken(
+                userId, encryptedToken, ttl);
+          } catch (storeErr) {
+            logger.error(
+                'Failed to save initial refresh token to store:', storeErr);
+          }
+        }
 
         sessionData = {
           providerId: provider.id,
@@ -503,19 +731,36 @@ export function createAuthRouter(config: Config): Router {
         });
 
         const tokenData = await tokenRes.json();
-        if (!tokenRes.ok)
+        if (!tokenRes.ok) {
           throw new Error(
               `Failed to get OIDC token: ${JSON.stringify(tokenData)}`);
+        }
 
         const idToken = tokenData.id_token;
-        if (!idToken)
+        if (!idToken) {
           throw new Error('OIDC provider did not return an id_token');
+        }
 
         const payloadBase64 = idToken.split('.')[1];
         const payloadStr =
-            Buffer.from(payloadBase64, 'base64').toString('utf8');
+            Buffer.from(payloadBase64, 'base64url').toString('utf8');
         const payload = JSON.parse(payloadStr) as
             {email?: string, name?: string, sub?: string};
+
+        const userId = payload.sub || payload.email;
+        if (refreshTokenStore && userId && tokenData.refresh_token) {
+          try {
+            const ttl = config.firestore_config?.ttlSeconds ||
+                604800;  // 7 days default
+            const encryptedToken =
+                encryptText(tokenData.refresh_token, encryptionKey);
+            await refreshTokenStore.saveRefreshToken(
+                userId, encryptedToken, ttl);
+          } catch (storeErr) {
+            logger.error(
+                'Failed to save 3p OIDC refresh token to store:', storeErr);
+          }
+        }
 
         const client = new IdentityPoolClient({
           type: 'external_account',
@@ -545,6 +790,8 @@ export function createAuthRouter(config: Config): Router {
         throw new Error(`Provider type ${(provider as {type?: string}).type} not yet implemented.`);
       }
 
+      const cookieOptions =
+          getCookieOptions(config, provider.type, refreshTokenStore);
       const encryptedSession = encryptSession(sessionData, encryptionKey);
       res.cookie(cookieName, encryptedSession, cookieOptions);
 
@@ -555,8 +802,20 @@ export function createAuthRouter(config: Config): Router {
   });
 
   // 4. POST /auth/logout
-  router.post('/auth/logout', (req: Request, res: Response) => {
-    res.clearCookie(cookieName, cookieOptions);
+  router.post('/auth/logout', async (req: Request, res: Response) => {
+    const encryptedSession = req.cookies?.[cookieName];
+    if (encryptedSession && refreshTokenStore) {
+      try {
+        const session = decryptSession(encryptedSession, encryptionKey);
+        const userId = session.user.id || session.user.email;
+        if (userId) {
+          await refreshTokenStore.deleteRefreshToken(userId);
+        }
+      } catch (err) {
+        logger.error('Failed to delete refresh token on logout:', err);
+      }
+    }
+    res.clearCookie(cookieName, getClearCookieOptions(config));
     res.status(200).send({success: true});
   });
 
@@ -575,7 +834,7 @@ export function createAuthRouter(config: Config): Router {
         user: session.user,
       });
     } catch (err) {
-      res.clearCookie(cookieName, cookieOptions);
+      res.clearCookie(cookieName, getClearCookieOptions(config));
       res.status(401).json({authenticated: false, error: 'Invalid session'});
     }
   });

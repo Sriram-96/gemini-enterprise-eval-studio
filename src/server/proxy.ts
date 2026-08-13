@@ -18,6 +18,7 @@ import {Router, Request, Response} from 'express';
 import {Config} from './config';
 import {createAuthenticateMiddleware} from './auth';
 import {google} from 'googleapis';
+import {RefreshTokenStore} from './store';
 
 const ENGINE_PATH_REGEX = /^projects\/([^/]+)\/locations\/([^/]+)\/collections\/([^/]+)\/engines\/([^/]+)$/;
 const REGION_REGEX = /^[a-z0-9-]+$/;
@@ -25,9 +26,9 @@ const REGION_REGEX = /^[a-z0-9-]+$/;
 /**
  * Creates the Express router for proxying requests to Discovery Engine and Vertex AI.
  */
-export function createProxyRouter(config: Config): Router {
+export function createProxyRouter(config: Config, refreshTokenStore?: RefreshTokenStore): Router {
   const router = Router();
-  const authMiddleware = createAuthenticateMiddleware(config);
+  const authMiddleware = createAuthenticateMiddleware(config, refreshTokenStore);
 
   // Apply auth middleware to protect these proxy endpoints
   router.use('/api/v1/*', authMiddleware);
