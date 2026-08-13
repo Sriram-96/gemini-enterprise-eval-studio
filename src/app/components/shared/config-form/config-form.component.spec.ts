@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {HttpClient, HttpErrorResponse} from '@angular/common/http';
+import {HttpErrorResponse} from '@angular/common/http';
 import {ComponentFixture, TestBed, fakeAsync, tick} from '@angular/core/testing';
 import {BehaviorSubject, of, throwError} from 'rxjs';
 
@@ -35,7 +35,6 @@ describe('ConfigFormComponent', () => {
   let configSubject: BehaviorSubject<AppConfig>;
   let enginesSubject: BehaviorSubject<Engine[]>;
   let errorMessageSubject: BehaviorSubject<string>;
-  let mockHttpClient: jasmine.SpyObj<HttpClient>;
 
   beforeEach(async () => {
     configSubject = new BehaviorSubject<AppConfig>({
@@ -63,9 +62,6 @@ describe('ConfigFormComponent', () => {
 
     mockStateService.getCurrentConfig.and.callFake(() => configSubject.value);
 
-    mockHttpClient = jasmine.createSpyObj('HttpClient', ['get']);
-    mockHttpClient.get.and.returnValue(of({}));
-
     mockAuthService = new MockAuthService();
     mockEvalBackendService = new MockEvalBackendService();
 
@@ -76,7 +72,6 @@ describe('ConfigFormComponent', () => {
             {provide: StateService, useValue: mockStateService},
             {provide: AuthService, useValue: mockAuthService},
             {provide: EvalBackendService, useValue: mockEvalBackendService},
-            {provide: HttpClient, useValue: mockHttpClient}
           ]
         })
         .compileComponents();

@@ -15,7 +15,7 @@
  */
 
 import {CommonModule} from '@angular/common';
-import {HttpClient, HttpErrorResponse} from '@angular/common/http';
+import {HttpErrorResponse} from '@angular/common/http';
 import {ChangeDetectorRef, Component, ElementRef, EventEmitter, HostListener, Input, OnDestroy, OnInit, Output, ViewChild} from '@angular/core';
 import {FormsModule} from '@angular/forms';
 import {Subject} from 'rxjs';
@@ -140,8 +140,7 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
       private readonly stateService: StateService,
       private readonly cdr: ChangeDetectorRef,
       readonly authService: AuthService,
-      private readonly evalBackendService: EvalBackendService,
-      private readonly http: HttpClient
+      private readonly evalBackendService: EvalBackendService
   ) {}
 
   ngOnInit() {

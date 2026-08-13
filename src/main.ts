@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import {provideHttpClient} from '@angular/common/http';
 import {bootstrapApplication} from '@angular/platform-browser';
 
 import {AppComponent} from './app/app.component';
@@ -25,6 +26,7 @@ import {StateService} from './app/services/state.service';
 
 bootstrapApplication(AppComponent, {
   providers: [
+    provideHttpClient(),
     StateService,
     {provide: AuthService, useClass: NoopAuthService},
     {provide: EvalBackendService, useClass: DirectGcpEvalBackendService},
