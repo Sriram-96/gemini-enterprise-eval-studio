@@ -41,10 +41,15 @@ architecture:
     data storage occur within your controlled environment.
 2.  **No Google Data Collection**: Google does not collect, store, or have
     access to your customer data, queries, evaluation inputs, or evaluation
-    results processed by this tool.
+    results processed by this tool. There are no telemetry pings, usage analytics,
+    or error reporting sent to any Google-owned project.
 3.  **Governing Agreements**: Any data handling and API calls made by the tool
     are governed solely by the customer's existing agreements with Google Cloud
     for the specific APIs used (e.g., Vertex AI APIs).
+4.  **Token Storage & Firestore Retention Policy by Auth Provider**:
+    - **SAML**: No credentials or tokens are stored in Firestore. SAML authentication assertions are processed statelessly without storing refresh tokens.
+    - **Google Identity & 3P OIDC**: If server-side token storage in Firestore is enabled (`firestore_config`), user refresh tokens are stored in your GCP project's Firestore database. Administrators can configure `firestore_config.ttlSeconds` to control how long refresh tokens remain valid/stored before users are required to sign in again (defaults to 7 days).
+    - **Firestore Purge Latency**: Expired tokens in Firestore are automatically purged under a TTL policy, which typically deletes expired documents within 24–72 hours of expiration. Please ensure this retention window satisfies your compliance requirements.
 
 ## Prerequisites & Setup
 
@@ -64,6 +69,7 @@ In the Google Cloud Console, navigate to **APIs & Services > Library** and enabl
 1. **Identity Provider Credentials**:
    - **Google Workspace (`google_identity`)**: [Create an OAuth 2.0 Client ID](https://cloud.google.com/iam/docs/creating-managing-oauth-clients) in your Google Cloud Console. Set the Authorized Redirect URIs to include `http://localhost:3000/auth/callback` (or your production domain).
    - **Third-Party Providers (`3p_oidc` / `3p_saml`)**: [Set up Workforce Identity Federation (WIF)](https://cloud.google.com/iam/docs/workforce-identity-federation) in GCP by creating a Workforce Pool and Provider. Register an OIDC or SAML application in your external IdP (e.g., Okta, Entra ID) and set the callback URI to `http://localhost:3000/auth/callback`.
+     > **Security Recommendation**: Configure attribute conditions or conditional access policies in your Workforce Identity Federation (WIF) Provider or external IdP to restrict access strictly to authorized business users and prevent unauthorized login by non-business accounts.
 2. **Secret Manager (Optional but recommended)**:
    - Store your OAuth client secret and session encryption key in GCP Secret Manager and use their URIs in `config.json`.
 3. **Application Configuration (`config.json`)**:
@@ -89,8 +95,6 @@ In No-Auth Mode, the application operates as a standalone frontend-only web appl
       <img src="src/assets/cloud_shell_icon.png" alt="Cloud Shell Terminal Button" />
     </p>
 
-
-
 ## Running Locally
 
 To run the application locally using `npm`, first install dependencies:
@@ -112,3 +116,23 @@ Then start the server in either **Auth Mode** (full stack) or **No-Auth Mode** (
   npm run start:no-auth
   ```
   By default, the frontend listens on port 4200.
+
+## Uninstall and Resource Deletion
+
+To completely uninstall Gemini Enterprise Eval Studio and delete all associated data and resources from your GCP project:
+
+1. **Stop or Remove Application Deployment**:
+   - Terminate the local application server or container process. To verify the backend server is down, ping the `/healthz` endpoint (e.g., `curl http://localhost:3000/healthz`); it should fail to connect.
+   - If deployed to a cloud environment (e.g., Cloud Run, App Engine), delete the deployed service or instance.
+
+2. **Delete Firestore Session Data**:
+   - If Firestore token storage was enabled (`firestore_config`), navigate to **Firestore** in the Google Cloud Console and delete the session/token collections.
+   - Alternatively, delete the Firestore database instance if it was created solely for this tool. Note: If relying on TTL expiration rather than manual deletion, expired documents are automatically purged by Firestore within 24–72 hours.
+
+3. **Remove Identity Provider Credentials & WIF**:
+   - Delete the OAuth 2.0 Client ID under **APIs & Services > Credentials** in your GCP project.
+   - If Workforce Identity Federation (WIF) was configured, delete the Workforce Pool and Provider under **IAM & Admin > Workforce Identity Pools**.
+
+4. **Delete Stored Secrets & Disable APIs (Optional)**:
+   - Delete any stored secrets in **Secret Manager** (such as OAuth client secrets or session encryption keys).
+   - Disable the Agent Platform API and Discovery Engine API under **APIs & Services > Enabled APIs & Services** if they are no longer needed.
