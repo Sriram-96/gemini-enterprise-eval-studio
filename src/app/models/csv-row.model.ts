@@ -20,5 +20,17 @@
 export interface CSVRow {
   query: string;
   golden: string;
-  [key: string]: string;
+  /**
+   * Optional. Rows sharing the same conversation_id are sent to the same
+   * Assistant session in order, as turns of one multi-turn conversation,
+   * instead of as independent single-turn queries.
+   */
+  conversation_id?: string;
+  /**
+   * Optional. Determines execution order within a conversation_id
+   * (ascending numeric order). If omitted, rows are processed in their
+   * original CSV order.
+   */
+  turn?: string;
+  [key: string]: string|undefined;
 }

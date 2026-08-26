@@ -63,6 +63,8 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     {header: 'Query', key: 'query', truncate: true},
     {header: 'Golden', key: 'golden', truncate: true},
     {header: 'Fetched', key: 'fetched', type: 'markdown', truncate: true},
+    {header: 'Conversation', key: 'conversationId', truncate: true},
+    {header: 'Turn', key: 'turn', type: 'number'},
     {header: 'TTFT (s)', key: 'ttft', type: 'number'},
     {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
     {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
@@ -141,22 +143,46 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     const results: ResultRow[] = [];
 
     if (this.totalRows === 0) return;
-    const tasks = event.rows.map(row => async () => {
-      if (runId !== this.currentRunId || !this.isProcessing) return;
 
-      const result = await this.evalService.processRow(row);
-      if (runId !== this.currentRunId || !this.isProcessing) return;
+    // Rows sharing a conversation_id are turns of one multi-turn
+    // conversation and must run sequentially against the same Assistant
+    // session (concurrent calls against one session race on context
+    // visibility). Rows without a conversation_id are independent
+    // single-turn queries, each its own one-row "conversation" below, and
+    // continue to run freely across the worker pool as before.
+    const conversations = this.groupIntoConversations(event.rows);
 
-      if (result.scoreError && !this.errorMessage) {
-        this.errorMessage =
-            `Scoring failed for some rows: ${result.scoreError}`;
+    const tasks = conversations.map(turns => async () => {
+      const isMultiTurn = turns.length > 1;
+      let session: string|undefined;
+
+      for (let i = 0; i < turns.length; i++) {
+        if (runId !== this.currentRunId || !this.isProcessing) return;
+        const row = turns[i];
+
+        const result = await this.evalService.processRow(row, undefined, {
+          session,
+          isSessionLess: !isMultiTurn,
+        });
+        session = result.session;
+        if (runId !== this.currentRunId || !this.isProcessing) return;
+
+        if (result.scoreError && !this.errorMessage) {
+          this.errorMessage =
+              `Scoring failed for some rows: ${result.scoreError}`;
+        }
+
+        results.push({
+          ...result,
+          conversationId: isMultiTurn ? row.conversation_id : undefined,
+          turn: isMultiTurn ? (Number(row.turn) || i + 1) : undefined,
+        });
+        this.stateService.setResults(results);
+        this.completedRows++;
+        this.progress =
+            Math.round((this.completedRows / this.totalRows) * 100);
+        this.cdr.detectChanges();
       }
-
-      results.push(result);
-      this.stateService.setResults(results);
-      this.completedRows++;
-      this.progress = Math.round((this.completedRows / this.totalRows) * 100);
-      this.cdr.detectChanges();
     });
 
     let index = 0;
@@ -260,5 +286,41 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   stopEvaluation() {
     this.isProcessing = false;
     this.cdr.detectChanges();
+  }
+
+  /**
+   * Groups rows by conversation_id, preserving each group's first-seen
+   * position in the input. Rows within a group are sorted by their `turn`
+   * value (ascending); rows without a `turn` keep their original relative
+   * order. Rows with no conversation_id each become their own
+   * single-row group, matching today's single-turn behavior.
+   */
+  private groupIntoConversations(rows: CSVRow[]): CSVRow[][] {
+    const order: string[] = [];
+    const groups = new Map<string, CSVRow[]>();
+    let singletonIndex = 0;
+
+    for (const row of rows) {
+      const id = row.conversation_id?.trim();
+      if (!id) {
+        const key = `__single_${singletonIndex++}`;
+        order.push(key);
+        groups.set(key, [row]);
+        continue;
+      }
+      if (!groups.has(id)) {
+        order.push(id);
+        groups.set(id, []);
+      }
+      groups.get(id)!.push(row);
+    }
+
+    for (const [id, groupRows] of groups) {
+      if (!id.startsWith('__single_')) {
+        groupRows.sort((a, b) => (Number(a.turn) || 0) - (Number(b.turn) || 0));
+      }
+    }
+
+    return order.map(id => groups.get(id)!);
   }
 }
