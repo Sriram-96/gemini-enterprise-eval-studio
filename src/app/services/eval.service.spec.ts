@@ -252,19 +252,21 @@ describe('EvalService', () => {
       spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(config);
     });
 
-    it('should mark the request as session-less when no session is given', async () => {
+    it('should omit the session field entirely for a standalone query (no sessionContext)', async () => {
       mockBackendService.callAssistSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify([{
         answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}
       }]))));
 
-      await service.processRow({query: 'q', golden: ''}, undefined, {isSessionLess: true});
+      await service.processRow({query: 'q', golden: ''});
 
       const request = mockBackendService.callAssistSpy.calls.mostRecent().args[0];
-      expect(request.body.isSessionLess).toBe(true);
       expect(request.body.session).toBeUndefined();
+      // isSessionLess is not recognized by the v1 streamAssist REST surface
+      // ("Unknown name \"isSessionLess\"": 400) and must never be sent.
+      expect(request.body.isSessionLess).toBeUndefined();
     });
 
-    it('should thread a given session into the request and omit isSessionLess', async () => {
+    it('should thread a given session into the request', async () => {
       mockBackendService.callAssistSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify([{
         answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}
       }]))));
@@ -276,7 +278,6 @@ describe('EvalService', () => {
       const request = mockBackendService.callAssistSpy.calls.mostRecent().args[0];
       expect(request.body.session).toBe(
           'projects/p/locations/global/collections/default_collection/engines/e/sessions/123');
-      expect(request.body.isSessionLess).toBeUndefined();
     });
 
     it('should capture sessionInfo from the response so the caller can continue the conversation', async () => {

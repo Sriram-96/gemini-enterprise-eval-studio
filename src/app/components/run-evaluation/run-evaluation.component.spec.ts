@@ -242,7 +242,7 @@ describe('RunEvaluationComponent', () => {
        expect(mockEvalService.processRow).toHaveBeenCalledTimes(4);
      }));
 
-  it('should mark independent single-turn rows as session-less', fakeAsync(() => {
+  it('should omit the session field for independent single-turn rows', fakeAsync(() => {
     const fixture = TestBed.createComponent(RunEvaluationComponent);
     const component = fixture.componentInstance;
     fixture.detectChanges();
@@ -265,7 +265,7 @@ describe('RunEvaluationComponent', () => {
         {file: new File([], 'test.csv'), rows: [{query: 'q1', golden: 'g1'}]});
     tick();
 
-    expect(capturedContext).toEqual({session: undefined, isSessionLess: true});
+    expect(capturedContext).toEqual({session: undefined});
     expect(resultsSubject.value[0].conversationId).toBeUndefined();
     expect(resultsSubject.value[0].turn).toBeUndefined();
   }));
@@ -304,9 +304,8 @@ describe('RunEvaluationComponent', () => {
        // Both turns ran, in order, and turn 2 was given the session turn 1
        // returned rather than starting a fresh/unrelated session.
        expect(calls.map(c => c.query)).toEqual(['turn1', 'turn2']);
-       expect(calls[0].sessionContext).toEqual({session: undefined, isSessionLess: false});
-       expect(calls[1].sessionContext)
-           .toEqual({session: 'session-after-turn1', isSessionLess: false});
+       expect(calls[0].sessionContext).toEqual({session: undefined});
+       expect(calls[1].sessionContext).toEqual({session: 'session-after-turn1'});
 
        const results = resultsSubject.value;
        expect(results[0].conversationId).toBe('conv-a');

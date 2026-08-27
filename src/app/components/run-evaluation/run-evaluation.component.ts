@@ -160,10 +160,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
         if (runId !== this.currentRunId || !this.isProcessing) return;
         const row = turns[i];
 
-        const result = await this.evalService.processRow(row, undefined, {
-          session,
-          isSessionLess: !isMultiTurn,
-        });
+        const result = await this.evalService.processRow(row, undefined, {session});
         session = result.session;
         if (runId !== this.currentRunId || !this.isProcessing) return;
 

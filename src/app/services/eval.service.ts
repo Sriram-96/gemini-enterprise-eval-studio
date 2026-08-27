@@ -28,7 +28,6 @@ import {StateService} from './state.service';
 interface AssistRequestBody {
   query: {text: string};
   session?: string;
-  isSessionLess?: boolean;
   generationSpec?: {modelId: string};
   toolsSpec?: {
     vertexAiSearchSpec?: {
@@ -42,14 +41,8 @@ interface AssistRequestBody {
  * Threads a multi-turn conversation across processRow calls.
  */
 export interface SessionContext {
-  /** Session resource name to continue. Omit for the first turn. */
+  /** Session resource name to continue. Omit for the first turn or for a standalone, non-conversational query. */
   session?: string;
-  /**
-   * When true and no `session` is given, marks the request as session-less
-   * so the Assistant API does not create and persist a session for a
-   * one-off, non-conversational query.
-   */
-  isSessionLess?: boolean;
 }
 
 /**
@@ -98,10 +91,12 @@ export class EvalService {
       toolsSpec,
     };
 
+    // Note: the `isSessionLess` proto field is not recognized by the v1
+    // streamAssist REST surface ("Unknown name \"isSessionLess\"": 400), so
+    // a standalone (non-conversational) query simply omits `session`
+    // instead, matching pre-multi-turn behavior.
     if (sessionContext?.session) {
       body.session = sessionContext.session;
-    } else if (sessionContext?.isSessionLess) {
-      body.isSessionLess = true;
     }
 
     if (config.selectedModel !== 'auto') {
