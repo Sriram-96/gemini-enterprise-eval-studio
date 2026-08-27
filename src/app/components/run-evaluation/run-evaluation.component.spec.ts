@@ -241,5 +241,125 @@ describe('RunEvaluationComponent', () => {
 
        expect(mockEvalService.processRow).toHaveBeenCalledTimes(4);
      }));
+
+  it('should omit the session field for independent single-turn rows', fakeAsync(() => {
+    const fixture = TestBed.createComponent(RunEvaluationComponent);
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    let capturedContext: any;
+    mockEvalService.processRow.and.callFake(async (row, _progressCb, sessionContext) => {
+      capturedContext = sessionContext;
+      return {
+        query: row.query,
+        golden: row.golden,
+        fetched: `fetched-${row.query}`,
+        ttft: 10,
+        ttfa: 20,
+        ttlt: 30,
+        score: 0.9
+      };
+    });
+
+    component.startEvaluation(
+        {file: new File([], 'test.csv'), rows: [{query: 'q1', golden: 'g1'}]});
+    tick();
+
+    expect(capturedContext).toEqual({session: undefined});
+    expect(resultsSubject.value[0].conversationId).toBeUndefined();
+    expect(resultsSubject.value[0].turn).toBeUndefined();
+  }));
+
+  it('should run same-conversation turns sequentially, threading the returned session, and tag results with conversationId/turn',
+     fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
+
+       const sampleRows = [
+         {query: 'turn1', golden: 'g1', conversation_id: 'conv-a', turn: '1'},
+         {query: 'turn2', golden: 'g2', conversation_id: 'conv-a', turn: '2'},
+       ];
+
+       const calls: any[] = [];
+       mockEvalService.processRow.and.callFake(
+           async (row, _progressCb, sessionContext) => {
+             calls.push({query: row.query, sessionContext});
+             return {
+               query: row.query,
+               golden: row.golden,
+               fetched: `fetched-${row.query}`,
+               ttft: 10,
+               ttfa: 20,
+               ttlt: 30,
+               score: 0.9,
+               session: `session-after-${row.query}`,
+             };
+           });
+
+       component.startEvaluation(
+           {file: new File([], 'test.csv'), rows: sampleRows});
+       tick();
+
+       // Both turns ran, in order, and turn 2 was given the session turn 1
+       // returned rather than starting a fresh/unrelated session.
+       expect(calls.map(c => c.query)).toEqual(['turn1', 'turn2']);
+       expect(calls[0].sessionContext).toEqual({session: undefined});
+       expect(calls[1].sessionContext).toEqual({session: 'session-after-turn1'});
+
+       const results = resultsSubject.value;
+       expect(results[0].conversationId).toBe('conv-a');
+       expect(results[0].turn).toBe(1);
+       expect(results[1].conversationId).toBe('conv-a');
+       expect(results[1].turn).toBe(2);
+     }));
+
+  it('should run independent conversations concurrently while keeping each internally sequential',
+     fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
+
+       // Two 2-turn conversations. Turn 2 of each conversation must never
+       // start before turn 1 of that *same* conversation has resolved, but
+       // the two conversations themselves may interleave freely.
+       const sampleRows = [
+         {query: 'a1', golden: 'g', conversation_id: 'conv-a', turn: '1'},
+         {query: 'b1', golden: 'g', conversation_id: 'conv-b', turn: '1'},
+         {query: 'a2', golden: 'g', conversation_id: 'conv-a', turn: '2'},
+         {query: 'b2', golden: 'g', conversation_id: 'conv-b', turn: '2'},
+       ];
+
+       const startedBeforeFinished: Record<string, string[]> = {a2: [], b2: []};
+       const finished = new Set<string>();
+
+       mockEvalService.processRow.and.callFake(
+           async (row, _progressCb, sessionContext) => {
+             if (row.query === 'a2' || row.query === 'b2') {
+               startedBeforeFinished[row.query] = [...finished];
+             }
+             await Promise.resolve();
+             finished.add(row.query);
+             return {
+               query: row.query,
+               golden: row.golden,
+               fetched: `fetched-${row.query}`,
+               ttft: 10,
+               ttfa: 20,
+               ttlt: 30,
+               score: 0.9,
+               session: `session-after-${row.query}`,
+             };
+           });
+
+       component.startEvaluation(
+           {file: new File([], 'test.csv'), rows: sampleRows});
+       tick();
+
+       // By the time turn 2 of a conversation starts, turn 1 of that SAME
+       // conversation must have already finished.
+       expect(startedBeforeFinished['a2']).toContain('a1');
+       expect(startedBeforeFinished['b2']).toContain('b1');
+     }));
 });
 

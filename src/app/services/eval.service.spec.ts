@@ -235,5 +235,66 @@ describe('EvalService', () => {
       expect(result.scoreError).toContain('HTTP error! status: 500');
     });
   });
+
+  describe('processRow session handling', () => {
+    const config: AppConfig = {
+      projectId: 'project',
+      region: 'global',
+      selectedEngine: 'engine',
+      selectedModel: 'model',
+      autoRaterModel: 'gemini-3.5-flash',
+      autoRaterInstruction: 'instructions',
+      selectedDataStores: [],
+      enableWebSearch: false
+    };
+
+    beforeEach(() => {
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(config);
+    });
+
+    it('should omit the session field entirely for a standalone query (no sessionContext)', async () => {
+      mockBackendService.callAssistSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify([{
+        answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}
+      }]))));
+
+      await service.processRow({query: 'q', golden: ''});
+
+      const request = mockBackendService.callAssistSpy.calls.mostRecent().args[0];
+      expect(request.body.session).toBeUndefined();
+      // isSessionLess is not recognized by the v1 streamAssist REST surface
+      // ("Unknown name \"isSessionLess\"": 400) and must never be sent.
+      expect(request.body.isSessionLess).toBeUndefined();
+    });
+
+    it('should thread a given session into the request', async () => {
+      mockBackendService.callAssistSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify([{
+        answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}
+      }]))));
+
+      await service.processRow(
+          {query: 'q', golden: ''}, undefined,
+          {session: 'projects/p/locations/global/collections/default_collection/engines/e/sessions/123'});
+
+      const request = mockBackendService.callAssistSpy.calls.mostRecent().args[0];
+      expect(request.body.session).toBe(
+          'projects/p/locations/global/collections/default_collection/engines/e/sessions/123');
+    });
+
+    it('should capture sessionInfo from the response so the caller can continue the conversation', async () => {
+      mockBackendService.callAssistSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify([{
+        answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]},
+        sessionInfo: {
+          session: 'projects/p/locations/global/collections/default_collection/engines/e/sessions/123',
+          turnId: 'turn-1'
+        }
+      }]))));
+
+      const result = await service.processRow({query: 'q', golden: ''});
+
+      expect(result.session).toBe(
+          'projects/p/locations/global/collections/default_collection/engines/e/sessions/123');
+      expect(result.turnId).toBe('turn-1');
+    });
+  });
 });
 

@@ -27,6 +27,7 @@ import {StateService} from './state.service';
 
 interface AssistRequestBody {
   query: {text: string};
+  session?: string;
   generationSpec?: {modelId: string};
   toolsSpec?: {
     vertexAiSearchSpec?: {
@@ -34,6 +35,14 @@ interface AssistRequestBody {
     };
     webGroundingSpec?: {};
   };
+}
+
+/**
+ * Threads a multi-turn conversation across processRow calls.
+ */
+export interface SessionContext {
+  /** Session resource name to continue. Omit for the first turn or for a standalone, non-conversational query. */
+  session?: string;
 }
 
 /**
@@ -52,8 +61,9 @@ export class EvalService {
    * @param onProgress Optional callback for progress updates.
    * @returns A promise that resolves to the ResultRow.
    */
-  async processRow(row: CSVRow, onProgress?: (step: 'fetch'|'score') => void):
-      Promise<ResultRow> {
+  async processRow(
+      row: CSVRow, onProgress?: (step: 'fetch'|'score') => void,
+      sessionContext?: SessionContext): Promise<ResultRow> {
     const config = this.stateService.getCurrentConfig();
 
 
@@ -81,6 +91,14 @@ export class EvalService {
       toolsSpec,
     };
 
+    // Note: the `isSessionLess` proto field is not recognized by the v1
+    // streamAssist REST surface ("Unknown name \"isSessionLess\"": 400), so
+    // a standalone (non-conversational) query simply omits `session`
+    // instead, matching pre-multi-turn behavior.
+    if (sessionContext?.session) {
+      body.session = sessionContext.session;
+    }
+
     if (config.selectedModel !== 'auto') {
       body.generationSpec = {modelId: config.selectedModel};
     }
@@ -96,6 +114,7 @@ export class EvalService {
     let assistToken = '';
     let isFirstChunk = true;
     let isFirstUserChunk = true;
+    let sessionInfo: {session?: string; turnId?: string}|undefined;
 
     try {
       onProgress?.('fetch');
@@ -152,6 +171,10 @@ export class EvalService {
 
               if (item.assistToken) {
                 assistToken = item.assistToken;
+              }
+
+              if (item.sessionInfo?.session) {
+                sessionInfo = item.sessionInfo;
               }
 
               if (item.answer?.state === 'SKIPPED') {
@@ -217,7 +240,9 @@ export class EvalService {
         projectId,
         region,
         engineId,
-        scoreError
+        scoreError,
+        session: sessionInfo?.session,
+        turnId: sessionInfo?.turnId
       };
 
     } catch (error) {
@@ -233,7 +258,9 @@ export class EvalService {
         assistToken,
         projectId,
         region,
-        engineId
+        engineId,
+        session: sessionInfo?.session,
+        turnId: sessionInfo?.turnId
       };
     }
   }
