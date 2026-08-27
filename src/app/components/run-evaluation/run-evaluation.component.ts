@@ -20,8 +20,11 @@ import {FormsModule} from '@angular/forms';
 import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
+import {AppConfig} from '../../models/app-config.model';
 import {CSVRow} from '../../models/csv-row.model';
 import {ResultRow} from '../../models/result-row.model';
+import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
+import {ScorerRegistry} from '../../scoring/scorer.registry';
 import {EvalService} from '../../services/eval.service';
 import {StateService} from '../../services/state.service';
 import {ConfigFormComponent} from '../shared/config-form/config-form.component';
@@ -30,6 +33,35 @@ import {FileUploadComponent} from '../shared/file-upload/file-upload.component';
 import {ProgressBarComponent} from '../shared/progress-bar/progress-bar.component';
 
 const MAX_CONCURRENT_REQUESTS_FOR_EVALUATION = 5;
+
+/** The columns shown before the scores, whichever scorers ran. */
+const BASE_COLUMNS: readonly ColumnDef[] = [
+  {header: 'Query', key: 'query', truncate: true},
+  {header: 'Golden', key: 'golden', truncate: true},
+  {header: 'Fetched', key: 'fetched', type: 'markdown', truncate: true},
+  {header: 'Conversation', key: 'conversationId', truncate: true},
+  {header: 'Turn', key: 'turn', type: 'number'},
+  {header: 'TTFT (s)', key: 'ttft', type: 'number'},
+  {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
+  {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
+];
+
+/** The column shown when a single scorer ran. */
+const SINGLE_SCORE_COLUMN: ColumnDef = {
+  header: 'Score',
+  key: 'score',
+  type: 'score'
+};
+
+/** Column key holding a given scorer's score on a displayed row. */
+function scoreKey(scorerId: string): string {
+  return `score_${scorerId}`;
+}
+
+/** Column key holding a given scorer's error on a displayed row. */
+function scoreErrorKey(scorerId: string): string {
+  return `scoreError_${scorerId}`;
+}
 
 /**
  * Container component for the Run Evaluation tab, managing steps and evaluation
@@ -48,7 +80,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   step = 1;
   isProcessing = false;
   progress = 0;
-  results: any[] = [];
+  results: ResultRow[] = [];
   uploadedFile: File|null = null;
   uploadedRows: any[] = [];
   totalRows = 0;
@@ -59,25 +91,86 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   private readonly destroy$ = new Subject<void>();
   private currentRunId = 0;
 
-  columns: ColumnDef[] = [
-    {header: 'Query', key: 'query', truncate: true},
-    {header: 'Golden', key: 'golden', truncate: true},
-    {header: 'Fetched', key: 'fetched', type: 'markdown', truncate: true},
-    {header: 'Conversation', key: 'conversationId', truncate: true},
-    {header: 'Turn', key: 'turn', type: 'number'},
-    {header: 'TTFT (s)', key: 'ttft', type: 'number'},
-    {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
-    {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
-    {header: 'Score', key: 'score', type: 'score'}
-  ];
+  columns: ColumnDef[] = [...BASE_COLUMNS, SINGLE_SCORE_COLUMN];
+
+  /**
+   * `results` flattened for the table and the CSV export: one column per
+   * scorer instead of the nested `scorerResults` array.
+   */
+  displayResults: Array<Record<string, unknown>> = [];
 
   constructor(
       private stateService: StateService, private evalService: EvalService,
-      private cdr: ChangeDetectorRef) {}
+      private scorerRegistry: ScorerRegistry, private cdr: ChangeDetectorRef) {}
 
   ngOnInit() {
-    this.stateService.results$.pipe(takeUntil(this.destroy$))
-        .subscribe(r => this.results = r);
+    this.stateService.results$.pipe(takeUntil(this.destroy$)).subscribe(r => {
+      this.results = r;
+      this.refreshResultsView();
+    });
+  }
+
+  /**
+   * Rebuilds the table columns and rows from the current results. The columns
+   * follow the scorers actually present in the data, so a run stays readable
+   * after the configuration changes underneath it.
+   */
+  private refreshResultsView() {
+    const scorers = this.scorersInResults();
+
+    if (scorers.length > 1) {
+      const anyError = this.results.some(
+          row => row.scorerResults?.some(result => !!result.error));
+      this.columns = [
+        ...BASE_COLUMNS,
+        ...scorers.map(
+            scorer => ({
+              header: scorer.displayName,
+              key: scoreKey(scorer.scorerId),
+              type: 'score' as const
+            })),
+      ];
+      this.displayResults = this.results.map(row => {
+        const {scorerResults, ...rest} = row;
+        const flat: Record<string, unknown> = {...rest};
+        for (const scorer of scorers) {
+          const result =
+              scorerResults?.find(r => r.scorerId === scorer.scorerId);
+          flat[scoreKey(scorer.scorerId)] = result ? result.score : '';
+          if (anyError) {
+            flat[scoreErrorKey(scorer.scorerId)] = result?.error ?? '';
+          }
+        }
+        return flat;
+      });
+      return;
+    }
+
+    this.columns = [...BASE_COLUMNS, SINGLE_SCORE_COLUMN];
+    this.displayResults = this.results.map(row => {
+      const {scorerResults, ...rest} = row;
+      return rest as Record<string, unknown>;
+    });
+  }
+
+  /**
+   * The distinct scorers present in the current results, in run order.
+   * @returns The scorer id and display name of each, empty when no row has
+   *     been scored by the multi-scorer pipeline.
+   */
+  private scorersInResults(): Array<{scorerId: string, displayName: string}> {
+    const seen = new Map<string, string>();
+    for (const row of this.results) {
+      for (const result of row.scorerResults ?? []) {
+        if (!seen.has(result.scorerId)) {
+          seen.set(result.scorerId, result.displayName);
+        }
+      }
+    }
+    return [...seen].map(([scorerId, displayName]) => ({
+                          scorerId,
+                          displayName
+                        }));
   }
 
   ngOnDestroy() {
@@ -205,6 +298,27 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** Gets the scoring strategies selected in the configuration, in run order. */
+  getSelectedScorers(): readonly Scorer[] {
+    return this.scorerRegistry.resolveAll(
+        this.stateService.getCurrentConfig().selectedScorers);
+  }
+
+  /** Names the selected scorers for the re-rate modal. */
+  getSelectedScorersLabel(): string {
+    return this.getSelectedScorers().map(scorer => scorer.displayName)
+        .join(', ');
+  }
+
+  /**
+   * Checks whether any selected scorer reads the given configuration key, so
+   * that only the inputs the run needs are rendered in the re-rate modal.
+   */
+  usesConfigKey(key: keyof AppConfig): boolean {
+    return this.getSelectedScorers().some(
+        scorer => scorer.configKeys.includes(key));
+  }
+
   /** Opens the re-rate modal and loads active instructions. */
   openReRateModal() {
     const config = this.stateService.getCurrentConfig();
@@ -213,7 +327,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  /** Re-rates current evaluation results using updated instructions. */
+  /** Re-scores the current results without re-fetching the responses. */
   async startReRate() {
     if (this.isProcessing) return;
     this.showReRateModal = false;
@@ -224,8 +338,11 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
 
     const config = this.stateService.getCurrentConfig();
-    config.autoRaterInstruction = this.reRateInstruction;
-    this.stateService.setConfig(config);
+    if (this.usesConfigKey('autoRaterInstruction')) {
+      config.autoRaterInstruction = this.reRateInstruction;
+      this.stateService.setConfig(config);
+    }
+    const scorers = this.getSelectedScorers();
 
     this.errorMessage = null;
     const newResults: ResultRow[] = [];
@@ -241,20 +358,19 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
       this.progress = Math.round((i / this.totalRows) * 100);
       this.cdr.detectChanges();
 
-      let score = 0;
-      if (row.golden && row.fetched) {
-        try {
-          score = await this.evalService.scoreResponse(
-              row.query, row.fetched, row.golden, config);
-        } catch (error) {
-          this.errorMessage = `Re-rating failed: ${(error as Error).message}`;
-          // Push the remaining rows unchanged
-          for (let j = i; j < this.results.length; j++) {
-            newResults.push(this.results[j]);
-          }
-          break;
-        }
-      }
+      // Every scorer runs, one after another, so an unfetched row still gets
+      // an entry per scorer and the score columns stay aligned.
+      const scorerResults: ScorerRunResult[] = row.fetched ?
+          await this.evalService.scoreAll(
+              {query: row.query, response: row.fetched, golden: row.golden,
+               config}) :
+          scorers.map(scorer => ({
+                        scorerId: scorer.id,
+                        displayName: scorer.displayName,
+                        score: 0,
+                        skipped: true
+                      }));
+
       if (!this.isProcessing) {
         for (let j = i; j < this.results.length; j++) {
           newResults.push(this.results[j]);
@@ -262,10 +378,17 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
         break;
       }
 
-      newResults.push({
-        ...row,
-        score
-      });
+      const summary = summarizeScorerResults(scorerResults);
+      if (summary.scoreError) {
+        // Stop on the first failure rather than replaying the same broken
+        // credentials or quota against every remaining row.
+        this.errorMessage = `Re-rating failed: ${summary.scoreError}`;
+        for (let j = i; j < this.results.length; j++) {
+          newResults.push(this.results[j]);
+        }
+        break;
+      }
+      newResults.push({...row, ...summary});
 
       this.completedRows++;
       this.cdr.detectChanges();

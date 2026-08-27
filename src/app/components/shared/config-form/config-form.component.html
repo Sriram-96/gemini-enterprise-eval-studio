@@ -181,11 +181,42 @@
     </div>
   </div>
 
-  <!-- Auto Rater Setup Card -->
+  <!-- Scoring Setup Card -->
   <div *ngIf="!isRunQueries" class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-    <h3 class="text-lg font-medium mb-4 text-gray-800">Auto Rater Setup</h3>
+    <h3 class="text-lg font-medium mb-4 text-gray-800">Scoring Setup</h3>
     <div class="space-y-4">
-      <div>
+      <div *ngIf="scorers.length > 1">
+        <label class="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1"
+          ><span>Scoring Methods</span
+          ><app-info-tooltip
+            class="inline-flex"
+            text="The strategies used to score each fetched response. Every selected scorer runs against every row, one after another, and gets its own column in the results."
+          ></app-info-tooltip
+        ></label>
+        <div class="border border-gray-300 rounded-md divide-y divide-gray-200">
+          <label
+            *ngFor="let s of scorers"
+            class="flex items-start gap-2 p-2 hover:bg-blue-50 transition-colors cursor-pointer select-none"
+          >
+            <input
+              type="checkbox"
+              [attr.aria-label]="s.displayName"
+              [checked]="isScorerSelected(s)"
+              [disabled]="isScorerSelected(s) && getSelectedScorers().length === 1"
+              (change)="toggleScorer(s)"
+              class="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
+            />
+            <div>
+              <div class="text-sm text-gray-700">{{ s.displayName }}</div>
+              <div *ngIf="s.description" class="text-xs text-gray-500">{{ s.description }}</div>
+            </div>
+          </label>
+        </div>
+        <div class="mt-1 text-xs text-gray-500">
+          {{ getSelectedScorersSummary() }}. Scorers run in the order listed above.
+        </div>
+      </div>
+      <div *ngIf="usesConfigKey('autoRaterModel')">
         <label class="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1"
           ><span>Auto Rater Model</span
           ><app-info-tooltip
@@ -206,7 +237,7 @@
           {{ autoRaterErrorMessage }}
         </div>
       </div>
-      <div>
+      <div *ngIf="usesConfigKey('autoRaterInstruction')">
         <label class="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1"
           ><span>Auto Rater Instruction</span
           ><app-info-tooltip
@@ -222,6 +253,9 @@
           class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
           placeholder="Enter evaluation instructions..."
         ></textarea>
+      </div>
+      <div *ngIf="getScorerValidationError()" class="text-xs text-red-600">
+        {{ getScorerValidationError() }}
       </div>
     </div>
   </div>
