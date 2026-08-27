@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+import {ScorerRunResult} from '../scoring/scorer';
+
 /**
  * Represents a row in the evaluation results.
  */
@@ -27,11 +29,24 @@ export interface ResultRow {
   ttfa: number;
   /** Time to Last Token in seconds (s). */
   ttlt: number;
+  /**
+   * Score of the primary scorer, meaning the first one in the configured
+   * selection. Always present so the results table and the Compare tab have a
+   * single score to work with, however many scorers ran.
+   */
   score: number;
+  /** Identifier of the scorer that produced `score`. */
+  scorerId?: string;
+  /**
+   * One entry per scorer that ran, in run order. `scorerResults[0]` is the
+   * primary scorer mirrored by `score` and `scorerId`.
+   */
+  scorerResults?: ScorerRunResult[];
   assistToken?: string;
   projectId?: string;
   region?: string;
   engineId?: string;
+  /** Error message of the first scorer that failed, if any. */
   scoreError?: string;
   /** Conversation grouping id from the input CSV, present only for multi-turn rows. */
   conversationId?: string;

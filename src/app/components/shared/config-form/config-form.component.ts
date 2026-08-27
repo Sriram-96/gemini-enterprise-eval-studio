@@ -22,6 +22,8 @@ import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig, CollectionComponent, DataStoreComponent, Engine, WidgetConfigResponse} from '../../../models/app-config.model';
+import {Scorer} from '../../../scoring/scorer';
+import {ScorerRegistry} from '../../../scoring/scorer.registry';
 import {AuthService} from '../../../services/auth.service';
 import {EvalBackendService} from '../../../services/eval-backend.service';
 import {StateService} from '../../../services/state.service';
@@ -127,6 +129,9 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   autoRaterModels: string[] = ['gemini-3.1-pro-preview', 'gemini-3.5-flash'];
   autoRaterErrorMessage = '';
 
+  /** All registered scoring strategies, in display order. */
+  readonly scorers: readonly Scorer[];
+
   engines: Engine[] = [];
   models: string[] = [];
   loading = false;
@@ -140,8 +145,11 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
       private readonly stateService: StateService,
       private readonly cdr: ChangeDetectorRef,
       readonly authService: AuthService,
-      private readonly evalBackendService: EvalBackendService
-  ) {}
+      private readonly evalBackendService: EvalBackendService,
+      private readonly scorerRegistry: ScorerRegistry
+  ) {
+    this.scorers = this.scorerRegistry.list();
+  }
 
   ngOnInit() {
     if (!this.authService.showCredentialInputs) {
@@ -152,6 +160,15 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
         .subscribe((c: AppConfig) => {
           const engineChanged = this.config.selectedEngine !== c.selectedEngine;
           this.config = structuredClone(c);
+          const configured = this.config.selectedScorers ?? [];
+          const known = configured.filter(id => !!this.scorerRegistry.find(id));
+          const normalized =
+              known.length > 0 ? known : this.scorerRegistry.defaultIds;
+          if (normalized.length !== configured.length ||
+              normalized.some((id, i) => id !== configured[i])) {
+            this.config.selectedScorers = normalized;
+            this.onConfigChange();
+          }
           if (this.engines.length > 0) {
             this.updateModelsForSelectedEngine();
             if (engineChanged) {
@@ -580,6 +597,66 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
     return `${count} Connector${count > 1 ? 's' : ''} Selected`;
   }
 
+  /** Gets the scoring strategies that will run, in run order. */
+  getSelectedScorers(): readonly Scorer[] {
+    return this.scorerRegistry.resolveAll(this.config.selectedScorers);
+  }
+
+  /** Checks whether a scorer is part of the current selection. */
+  isScorerSelected(scorer: Scorer): boolean {
+    return this.getSelectedScorers().some(s => s.id === scorer.id);
+  }
+
+  /**
+   * Adds or removes a scorer from the selection. The last remaining scorer
+   * cannot be removed, because every run needs at least one.
+   */
+  toggleScorer(scorer: Scorer) {
+    const selected = this.getSelectedScorers();
+    if (this.isScorerSelected(scorer)) {
+      if (selected.length === 1) {
+        return;
+      }
+      this.config.selectedScorers =
+          selected.filter(s => s.id !== scorer.id).map(s => s.id);
+    } else {
+      this.config.selectedScorers = [...selected.map(s => s.id), scorer.id];
+    }
+    this.onConfigChange();
+  }
+
+  /** Summarizes the selection for the multi-select trigger button. */
+  getSelectedScorersSummary(): string {
+    const selected = this.getSelectedScorers();
+    if (selected.length === 1) {
+      return selected[0].displayName;
+    }
+    return `${selected.length} Scorers Selected`;
+  }
+
+  /**
+   * Checks whether any selected scorer reads the given configuration key, so
+   * that only the inputs the run needs are rendered.
+   */
+  usesConfigKey(key: keyof AppConfig): boolean {
+    return this.getSelectedScorers().some(
+        scorer => scorer.configKeys.includes(key));
+  }
+
+  /**
+   * Validates every selected scorer against the current configuration.
+   * @returns The first error message, or null when all of them can run.
+   */
+  getScorerValidationError(): string|null {
+    for (const scorer of this.getSelectedScorers()) {
+      const error = scorer.validate(this.config);
+      if (error) {
+        return error;
+      }
+    }
+    return null;
+  }
+
   /**
    * Checks if the form is valid and user can proceed to next step.
    * @returns True if form is valid, false otherwise.
@@ -597,7 +674,7 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
       return !this.authService.showCredentialInputs || !!this.config.gCloudToken;
     }
 
-    if (!this.config.autoRaterModel) {
+    if (this.getScorerValidationError()) {
       return false;
     }
 

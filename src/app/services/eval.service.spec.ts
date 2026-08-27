@@ -15,241 +15,268 @@
  */
 
 import {TestBed} from '@angular/core/testing';
+
 import {AppConfig} from '../models/app-config.model';
+import {ScoreResult, Scorer, ScoringRequest} from '../scoring/scorer';
+import {SCORERS} from '../scoring/scorer.registry';
+import {AUTO_RATER_SCORER_ID} from '../scoring/scorers/auto-rater.scorer';
+import {MockEvalBackendService} from '../testing/mocks';
+
 import {EvalBackendService} from './eval-backend.service';
 import {EvalService} from './eval.service';
 import {StateService} from './state.service';
-import {MockEvalBackendService} from '../testing/mocks';
+
+const CONFIG: AppConfig = {
+  projectId: 'project',
+  region: 'global',
+  selectedEngine: 'engine',
+  selectedModel: 'model',
+  autoRaterModel: 'gemini-3.5-flash',
+  autoRaterInstruction: 'instructions',
+  selectedDataStores: [],
+  enableWebSearch: false
+};
+
+/** A scorer whose behaviour and golden requirement the test controls. */
+class FakeScorer extends Scorer {
+  override readonly requiresGolden: boolean;
+  readonly requests: ScoringRequest[] = [];
+
+  constructor(
+      readonly id: string, readonly displayName: string,
+      private readonly behavior: () => Promise<ScoreResult>,
+      requiresGolden = false) {
+    super();
+    this.requiresGolden = requiresGolden;
+  }
+
+  async score(request: ScoringRequest): Promise<ScoreResult> {
+    this.requests.push(request);
+    return this.behavior();
+  }
+}
 
 describe('EvalService', () => {
-  let service: EvalService;
   let mockBackendService: MockEvalBackendService;
 
-  beforeEach(() => {
+  /**
+   * Builds the injector, optionally replacing the registered scorers.
+   * @param scorers The scorers to register, or none to keep the built-ins.
+   */
+  function setUp(scorers?: Scorer[]): EvalService {
     mockBackendService = new MockEvalBackendService();
     TestBed.configureTestingModule({
       providers: [
         EvalService,
         StateService,
-        {provide: EvalBackendService, useValue: mockBackendService}
+        {provide: EvalBackendService, useValue: mockBackendService},
+        ...(scorers ? [{provide: SCORERS, useValue: scorers}] : []),
       ]
     });
-    service = TestBed.inject(EvalService);
-  });
+    return TestBed.inject(EvalService);
+  }
 
-  describe('scoreResponse parsing', () => {
-    const config: AppConfig = {
-      projectId: 'project',
-      region: 'global',
-      selectedEngine: 'engine',
-      selectedModel: 'model',
-      autoRaterModel: 'gemini-3.5-flash',      autoRaterInstruction: 'instructions',
-      selectedDataStores: [],
-      enableWebSearch: false
-    };
+  describe('scoreAll', () => {
+    it('should run every selected scorer and report them in run order',
+       async () => {
+         const first = new FakeScorer('first', 'First', async () => ({
+                                                          score: 0.25
+                                                        }));
+         const second = new FakeScorer('second', 'Second', async () => ({
+                                                             score: 0.75
+                                                           }));
+         const service = setUp([first, second]);
 
-    it('should parse a clean float score', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '0.85' }] } }]
-      }))));
+         const results = await service.scoreAll({
+           query: 'q',
+           response: 'r',
+           golden: 'g',
+           config: {...CONFIG, selectedScorers: ['first', 'second']}
+         });
 
-      const score = await service.scoreResponse('query', 'response', 'golden', config);
-      expect(score).toBe(0.85);
-    });
+         expect(results).toEqual([
+           {scorerId: 'first', displayName: 'First', score: 0.25},
+           {scorerId: 'second', displayName: 'Second', score: 0.75},
+         ]);
+       });
 
-    it('should parse a score wrapped in markdown fences', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '```\n0.85\n```' }] } }]
-      }))));
+    it('should run the scorers one after another rather than concurrently',
+       async () => {
+         const events: string[] = [];
+         const trace = (id: string) => async () => {
+           events.push(`start:${id}`);
+           await new Promise(resolve => setTimeout(resolve, 0));
+           events.push(`end:${id}`);
+           return {score: 1};
+         };
+         const service = setUp([
+           new FakeScorer('first', 'First', trace('first')),
+           new FakeScorer('second', 'Second', trace('second')),
+         ]);
 
-      const score = await service.scoreResponse('query', 'response', 'golden', config);
-      expect(score).toBe(0.85);
-    });
+         await service.scoreAll({
+           query: 'q',
+           response: 'r',
+           golden: 'g',
+           config: {...CONFIG, selectedScorers: ['first', 'second']}
+         });
 
-    it('should parse a score with conversational text', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: 'The semantic similarity score is 0.9.' }] } }]
-      }))));
+         expect(events).toEqual(
+             ['start:first', 'end:first', 'start:second', 'end:second']);
+       });
 
-      const score = await service.scoreResponse('query', 'response', 'golden', config);
-      expect(score).toBe(0.9);
-    });
+    it('should keep running the remaining scorers after one throws',
+       async () => {
+         const service = setUp([
+           new FakeScorer(
+               'broken', 'Broken',
+               async () => {
+                 throw new Error('scorer exploded');
+               }),
+           new FakeScorer('working', 'Working', async () => ({score: 0.5})),
+         ]);
 
-    it('should parse score with prefix', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: 'Score: 0.75' }] } }]
-      }))));
+         const results = await service.scoreAll({
+           query: 'q',
+           response: 'r',
+           golden: 'g',
+           config: {...CONFIG, selectedScorers: ['broken', 'working']}
+         });
 
-      const score = await service.scoreResponse('query', 'response', 'golden', config);
-      expect(score).toBe(0.75);
-    });
+         expect(results[0].error).toBe('scorer exploded');
+         expect(results[0].score).toBe(0);
+         expect(results[1].score).toBe(0.5);
+         expect(results[1].error).toBeUndefined();
+       });
 
-    it('should parse score when range instruction 0.0-1.0 is mentioned at the end', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: 'The score is 0.85, which is between 0.0 and 1.0.' }] } }]
-      }))));
+    it('should skip a scorer that needs a golden answer when there is none',
+       async () => {
+         const needsGolden = new FakeScorer(
+             'needs-golden', 'Needs Golden', async () => ({score: 1}), true);
+         const referenceFree =
+             new FakeScorer('free', 'Reference Free', async () => ({
+                                                        score: 0.4
+                                                      }));
+         const service = setUp([needsGolden, referenceFree]);
 
-      const score = await service.scoreResponse('query', 'response', 'golden', config);
-      expect(score).toBe(0.85);
-    });
+         const results = await service.scoreAll({
+           query: 'q',
+           response: 'r',
+           config: {...CONFIG, selectedScorers: ['needs-golden', 'free']}
+         });
 
-    it('should parse score with scale suffix', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '0.85 (scale 0-1)' }] } }]
-      }))));
+         expect(results[0].skipped).toBeTrue();
+         expect(results[0].score).toBe(0);
+         expect(needsGolden.requests).toEqual([]);
+         expect(results[1].score).toBe(0.4);
+         expect(referenceFree.requests.length).toBe(1);
+       });
 
-      const score = await service.scoreResponse('query', 'response', 'golden', config);
-      expect(score).toBe(0.85);
-    });
+    it('should fall back to the default scorer when none is selected',
+       async () => {
+         const first = new FakeScorer('first', 'First', async () => ({
+                                                          score: 0.1
+                                                        }));
+         const service =
+             setUp([first, new FakeScorer('second', 'Second', async () => ({
+                                                                score: 0.2
+                                                              }))]);
 
-    it('should parse score with fraction suffix', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '0.85/1.0' }] } }]
-      }))));
+         const results = await service.scoreAll(
+             {query: 'q', response: 'r', golden: 'g', config: CONFIG});
 
-      const score = await service.scoreResponse('query', 'response', 'golden', config);
-      expect(score).toBe(0.85);
-    });
+         expect(results.map(result => result.scorerId)).toEqual(['first']);
+       });
 
-    it('should parse score with "out of" suffix', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '0.85 out of 1' }] } }]
-      }))));
+    it('should ignore unknown scorer ids', async () => {
+      const service =
+          setUp([new FakeScorer('first', 'First', async () => ({score: 0.1}))]);
 
-      const score = await service.scoreResponse('query', 'response', 'golden', config);
-      expect(score).toBe(0.85);
-    });
-  });
+      const results = await service.scoreAll({
+        query: 'q',
+        response: 'r',
+        golden: 'g',
+        config: {...CONFIG, selectedScorers: ['nope', 'first']}
+      });
 
-  describe('scoreResponse error handling', () => {
-    const config: AppConfig = {
-      projectId: 'project',
-      region: 'global',
-      selectedEngine: 'engine',
-      selectedModel: 'model',
-      autoRaterModel: 'gemini-3.5-flash',
-      autoRaterInstruction: 'instructions',
-      selectedDataStores: [],
-      enableWebSearch: false
-    };
-
-    it('should throw an error if the response is not ok', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response('', {
-        status: 500,
-        statusText: 'Internal Server Error'
-      })));
-
-      await expectAsync(service.scoreResponse('query', 'response', 'golden', config))
-          .toBeRejectedWithError(/HTTP error! status: 500/);
-    });
-
-    it('should throw detailed error message from JSON response if available', async () => {
-      const errorResponse = {
-        error: {
-          message: 'Detailed error from API'
-        }
-      };
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify(errorResponse), {
-        status: 400,
-        statusText: 'Bad Request'
-      })));
-
-      await expectAsync(service.scoreResponse('query', 'response', 'golden', config))
-          .toBeRejectedWithError('Detailed error from API');
-    });
-
-    it('should throw permission denied error for 403 status if JSON parsing fails', async () => {
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response('Not JSON', {
-        status: 403,
-        statusText: 'Forbidden'
-      })));
-
-      await expectAsync(service.scoreResponse('query', 'response', 'golden', config))
-          .toBeRejectedWithError('Permission denied. Please check your Google Cloud access token.');
-    });
-  });
-
-  describe('scoreResponse model selection', () => {
-    const config: AppConfig = {
-      projectId: 'project',
-      region: 'global',
-      selectedEngine: 'engine',
-      selectedModel: 'some-other-model',      autoRaterModel: 'gemini-3.5-flash',
-      autoRaterInstruction: 'instructions',
-      selectedDataStores: [],
-      enableWebSearch: false
-    };
-
-    it('should call callScore with autoRaterModel regardless of selectedModel', async () => {
-      const customConfig = { ...config, autoRaterModel: 'my-custom-model' };
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '0.85' }] } }]
-      }))));
-
-      await service.scoreResponse('query', 'response', 'golden', customConfig);
-
-      expect(mockBackendService.callScoreSpy).toHaveBeenCalledWith(jasmine.objectContaining({
-        model: 'my-custom-model'
-      }));
+      expect(results.map(result => result.scorerId)).toEqual(['first']);
     });
   });
 
   describe('processRow', () => {
-    const config: AppConfig = {
-      projectId: 'project',
-      region: 'global',
-      selectedEngine: 'engine',
-      selectedModel: 'model',
-      autoRaterModel: 'gemini-3.5-flash',      autoRaterInstruction: 'instructions',
-      selectedDataStores: [],
-      enableWebSearch: false
-    };
+    /** A streamed assist response carrying a single reply. */
+    function fetched(text: string): Promise<Response> {
+      return Promise.resolve(new Response(JSON.stringify(
+          [{answer: {replies: [{groundedContent: {content: {text}}}]}}])));
+    }
 
-    it('should preserve the fetched text if scoring throws an error', async () => {
-      mockBackendService.callAssistSpy.and.returnValue(Promise.resolve(new Response(JSON.stringify([{
-        answer: {
-          replies: [{
-            groundedContent: {
-              content: {
-                text: 'Fetched response text'
-              }
-            }
-          }]
-        }
-      }]))));
+    it('should preserve the fetched text if scoring throws an error',
+       async () => {
+         const service = setUp();
+         mockBackendService.callAssistSpy.and.returnValue(
+             fetched('Fetched response text'));
+         mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(
+             new Response('', {status: 500, statusText: 'Internal Server Error'})));
+         spyOn(service['stateService'], 'getCurrentConfig')
+             .and.returnValue(CONFIG);
 
-      mockBackendService.callScoreSpy.and.returnValue(Promise.resolve(new Response('', {
-        status: 500,
-        statusText: 'Internal Server Error'
-      })));
+         const result =
+             await service.processRow({query: 'my query', golden: 'my golden'});
 
-      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(config);
+         expect(result.fetched).toBe('Fetched response text');
+         expect(result.score).toBe(0);
+         expect(result.scorerId).toBe(AUTO_RATER_SCORER_ID);
+         expect(result.scoreError).toContain('HTTP error! status: 500');
+       });
 
-      const result = await service.processRow({
-        query: 'my query',
-        golden: 'my golden'
-      });
+    it('should record every scorer on the row and mirror the first one',
+       async () => {
+         const service = setUp([
+           new FakeScorer('first', 'First', async () => ({score: 0.25})),
+           new FakeScorer('second', 'Second', async () => ({score: 0.75})),
+         ]);
+         mockBackendService.callAssistSpy.and.returnValue(fetched('answer'));
+         spyOn(service['stateService'], 'getCurrentConfig')
+             .and.returnValue({...CONFIG, selectedScorers: ['first', 'second']});
 
-      expect(result.fetched).toBe('Fetched response text');
-      expect(result.score).toBe(0);
-      expect(result.scoreError).toContain('HTTP error! status: 500');
+         const result = await service.processRow({query: 'q', golden: 'g'});
+
+         expect(result.score).toBe(0.25);
+         expect(result.scorerId).toBe('first');
+         expect(result.scoreError).toBeUndefined();
+         expect(result.scorerResults).toEqual([
+           {scorerId: 'first', displayName: 'First', score: 0.25},
+           {scorerId: 'second', displayName: 'Second', score: 0.75},
+         ]);
+       });
+
+    it('should name the failing scorer when several ran', async () => {
+      const service = setUp([
+        new FakeScorer('first', 'First', async () => ({score: 0.25})),
+        new FakeScorer(
+            'second', 'Second',
+            async () => {
+              throw new Error('quota exceeded');
+            }),
+      ]);
+      mockBackendService.callAssistSpy.and.returnValue(fetched('answer'));
+      spyOn(service['stateService'], 'getCurrentConfig')
+          .and.returnValue({...CONFIG, selectedScorers: ['first', 'second']});
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      // The primary scorer still succeeded, so its score stands.
+      expect(result.score).toBe(0.25);
+      expect(result.scoreError).toBe('Second: quota exceeded');
     });
   });
 
   describe('processRow session handling', () => {
-    const config: AppConfig = {
-      projectId: 'project',
-      region: 'global',
-      selectedEngine: 'engine',
-      selectedModel: 'model',
-      autoRaterModel: 'gemini-3.5-flash',
-      autoRaterInstruction: 'instructions',
-      selectedDataStores: [],
-      enableWebSearch: false
-    };
+    let service: EvalService;
 
     beforeEach(() => {
-      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(config);
+      service = setUp();
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
     });
 
     it('should omit the session field entirely for a standalone query (no sessionContext)', async () => {
@@ -297,4 +324,3 @@ describe('EvalService', () => {
     });
   });
 });
-
