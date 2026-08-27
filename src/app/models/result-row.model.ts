@@ -23,6 +23,17 @@ export interface ResultRow {
   query: string;
   golden: string;
   fetched: string;
+  /**
+   * The model's thinking trace: the text of every reply marked
+   * `content.thought`, one thought per line, in the order the stream produced
+   * them. Exported to CSV but deliberately not shown in the results table.
+   *
+   * Always set by `EvalService.processRow`, empty when the model emitted no
+   * thoughts, because the CSV export derives its header from the first row
+   * alone and a key missing there drops the column from the whole file.
+   * Models differ: the Gemini 2.5 family emits thoughts, 3.5 does not.
+   */
+  thoughts?: string;
   /** Time to First Token in seconds (s). */
   ttft: number;
   /** Time to First Answer Token in seconds (s). */

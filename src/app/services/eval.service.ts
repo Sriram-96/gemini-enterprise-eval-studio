@@ -113,6 +113,7 @@ export class EvalService {
     let ttft = 0;
     let ttfa = 0;
     let fullText = '';
+    const thoughts: string[] = [];
     let assistToken = '';
     let isFirstChunk = true;
     let isFirstUserChunk = true;
@@ -206,6 +207,17 @@ export class EvalService {
                     if (text && !thought) {
                       fullText += text;
                     }
+
+                    if (text && thought) {
+                      // One thought per line, so a reader can scan the trace
+                      // as a list. Each streamed thought is its own reply, so
+                      // internal newlines are folded away rather than being
+                      // mistaken for extra thoughts.
+                      const line = text.replace(/\s+/g, ' ').trim();
+                      if (line) {
+                        thoughts.push(line);
+                      }
+                    }
                   }
                 }
               }
@@ -226,6 +238,7 @@ export class EvalService {
         query: row.query,
         golden: row.golden || '',
         fetched: fullText,
+        thoughts: thoughts.join('\n'),
         ttft: Number((ttft / 1000).toFixed(2)),
         ttfa: Number((ttfa / 1000).toFixed(2)),
         ttlt: Number((ttlt / 1000).toFixed(2)),
@@ -244,6 +257,9 @@ export class EvalService {
         query: row.query,
         golden: row.golden || '',
         fetched: 'Error: ' + error,
+        // Whatever the model managed to think before the failure is still
+        // worth keeping, and the key must exist so the column survives export.
+        thoughts: thoughts.join('\n'),
         ttft: 0,
         ttfa: 0,
         ttlt: 0,
