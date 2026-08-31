@@ -144,7 +144,9 @@ the **Source Attribution** scorer. It fails any row whose answer did not cite
 what you expected, so retrieval regressions surface the same way answer-quality
 regressions already do. See
 [src/app/scoring/README.md](src/app/scoring/README.md) for the matching rules,
-and `queryset.example.csv` for a worked example.
+and [testdata/connector-fixtures/](testdata/connector-fixtures/) for a worked
+example: six synthetic documents to upload to a connector and a query set whose
+answers are impossible to guess without retrieving them.
 
 ## Running with Docker
 

@@ -23,6 +23,7 @@ import {MockEvalBackendService} from '../testing/mocks';
 import {ScoreResult, Scorer, ScoringRequest} from './scorer';
 import {SCORERS, ScorerRegistry} from './scorer.registry';
 import {AUTO_RATER_SCORER_ID} from './scorers/auto-rater.scorer';
+import {ROUGE_L_SCORER_ID} from './scorers/rouge-l.scorer';
 
 /** Minimal scorer used to verify the registry stays strategy agnostic. */
 class FakeScorer extends Scorer {
@@ -53,6 +54,35 @@ describe('ScorerRegistry', () => {
 
     it('should register the auto rater', () => {
       expect(registry.list().map(s => s.id)).toContain(AUTO_RATER_SCORER_ID);
+    });
+
+    it('should register ROUGE-L', () => {
+      expect(registry.list().map(s => s.id)).toContain(ROUGE_L_SCORER_ID);
+    });
+
+    it('should keep the auto rater ahead of ROUGE-L, so it stays primary',
+       () => {
+         const ids = registry.list().map(s => s.id);
+
+         expect(ids.indexOf(AUTO_RATER_SCORER_ID))
+             .toBeLessThan(ids.indexOf(ROUGE_L_SCORER_ID));
+         expect(registry.defaultId).toBe(AUTO_RATER_SCORER_ID);
+       });
+
+    it('should resolve both built-in scorers together', () => {
+      const selected =
+          registry.resolveAll([ROUGE_L_SCORER_ID, AUTO_RATER_SCORER_ID]);
+
+      expect(selected.map(s => s.id)).toEqual([
+        AUTO_RATER_SCORER_ID, ROUGE_L_SCORER_ID
+      ]);
+    });
+
+    it('should accept any config for ROUGE-L, as it needs none', () => {
+      const scorer = registry.resolve(ROUGE_L_SCORER_ID);
+
+      expect(scorer.configKeys).toEqual([]);
+      expect(scorer.validate({autoRaterModel: ''} as AppConfig)).toBeNull();
     });
 
     it('should default to the first registered scorer', () => {
