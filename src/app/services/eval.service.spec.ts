@@ -17,9 +17,10 @@
 import {TestBed} from '@angular/core/testing';
 
 import {AppConfig} from '../models/app-config.model';
-import {ScoreResult, Scorer, ScoringRequest} from '../scoring/scorer';
+import {ScoreResult, Scorer, ScoringRequest, summarizeScorerResults} from '../scoring/scorer';
 import {SCORERS} from '../scoring/scorer.registry';
 import {AUTO_RATER_SCORER_ID} from '../scoring/scorers/auto-rater.scorer';
+import {ROUGE_L_SCORER_ID} from '../scoring/scorers/rouge-l.scorer';
 import {MockEvalBackendService} from '../testing/mocks';
 
 import {EvalBackendService} from './eval-backend.service';
@@ -200,6 +201,82 @@ describe('EvalService', () => {
       });
 
       expect(results.map(result => result.scorerId)).toEqual(['first']);
+    });
+  });
+
+  describe('scoreAll with the built-in scorers', () => {
+    /** A successful auto rater response carrying the given raw score. */
+    function ratedWith(text: string): Promise<Response> {
+      return Promise.resolve(new Response(
+          JSON.stringify({candidates: [{content: {parts: [{text}]}}]})));
+    }
+
+    const BOTH = {
+      ...CONFIG,
+      selectedScorers: [AUTO_RATER_SCORER_ID, ROUGE_L_SCORER_ID]
+    };
+
+    it('should run both scorers with the auto rater as primary', async () => {
+      const service = setUp();
+      mockBackendService.callScoreSpy.and.returnValue(ratedWith('0.9'));
+
+      const results = await service.scoreAll({
+        query: 'what is the capital of france',
+        response: 'the capital of france is paris',
+        golden: 'paris is the capital of france',
+        config: BOTH
+      });
+
+      expect(results.map(result => result.scorerId)).toEqual([
+        AUTO_RATER_SCORER_ID, ROUGE_L_SCORER_ID
+      ]);
+      expect(results[0].score).toBe(0.9);
+      expect(results[1].score).toBeCloseTo(0.667, 3);
+      expect(summarizeScorerResults(results).scorerId)
+          .toBe(AUTO_RATER_SCORER_ID);
+    });
+
+    it('should score with ROUGE-L without calling the backend', async () => {
+      const service = setUp();
+
+      const results = await service.scoreAll({
+        query: 'q',
+        response: 'hello world',
+        golden: 'hello world',
+        config: {...CONFIG, selectedScorers: [ROUGE_L_SCORER_ID]}
+      });
+
+      expect(results.map(result => result.scorerId)).toEqual([
+        ROUGE_L_SCORER_ID
+      ]);
+      expect(results[0].score).toBe(1);
+      expect(mockBackendService.callScoreSpy.calls.count()).toBe(0);
+    });
+
+    it('should keep ROUGE-L scoring when the auto rater fails', async () => {
+      const service = setUp();
+      mockBackendService.callScoreSpy.and.returnValue(
+          Promise.reject(new Error('rater is down')));
+
+      const results = await service.scoreAll({
+        query: 'q',
+        response: 'the capital of france is paris',
+        golden: 'paris is the capital of france',
+        config: BOTH
+      });
+
+      expect(results[0].error).toBe('rater is down');
+      expect(results[1].score).toBeCloseTo(0.667, 3);
+    });
+
+    it('should skip both scorers for a row with no golden answer', async () => {
+      const service = setUp();
+
+      const results = await service.scoreAll(
+          {query: 'q', response: 'r', config: BOTH});
+
+      expect(results.map(result => result.skipped)).toEqual([true, true]);
+      expect(mockBackendService.callScoreSpy.calls.count()).toBe(0);
     });
   });
 
