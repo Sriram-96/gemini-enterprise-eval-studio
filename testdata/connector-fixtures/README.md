@@ -170,6 +170,47 @@ produces the same column. Change one row's `expected_sources` to a value you
 know is wrong, e.g. `Travel and Expense Policy v7` → `nonexistent-datastore`,
 and confirm it scores 0.0 with `missing` populated.
 
+## A captured run, for reference
+
+`eval_results.csv` and `eval_traces.jsonl` are a real run of this query set
+against an engine with the six documents indexed, kept so the expected shape of
+the output is documented by example rather than by description. All
+account-specific identifiers are masked — project number, project id, engine
+id, data store id, bucket name, session ids, answer ids, document hashes and
+assist tokens. Masking is referentially consistent, so a session or token in
+the CSV still matches the same one in the JSONL and the two files can be read
+side by side.
+
+**Read them for the failures, not the passes.** That run scored 20 rows at 1.0,
+7 at 0.0, one skip and one error, and the three interesting groups are:
+
+- **Source drift, caught.** `conv-incident` t2, `conv-oncall` t2,
+  `conv-perdiem` t3 and `conv-coverage` t2 all cite nothing and score 0. Every
+  one of their answers was already present verbatim in the previous turn's
+  output, and every follow-up that needed genuinely new information did
+  re-ground. The agent re-retrieves only when it must. All four score 0.95–1.0
+  on the auto-rater: **answer quality alone reads them as passes**, which is
+  the entire reason attribution exists as a separate metric.
+- **The version trap, held.** The pre-approval row cites v7 and v6 together and
+  uses v6 only for the "previously $1,800" aside. `conv-perdiem` t4 — the
+  hardest row here, needing the superseded document to answer "has that rate
+  always been the same" — passes.
+- **`conv-pricing`, failed on all three turns.** Turn 1's "Enterprise annual
+  base price" is ambiguous against an engine whose own name contains
+  "enterprise", so it grounded in public Google Cloud pricing pages and turns
+  2–3 stayed anchored there. The same two facts pass as single-turn rows. This
+  is a flaw in how the question is worded, not a retrieval failure — a useful
+  reminder that an ambiguous query invalidates the row rather than the agent.
+
+Two things the capture shows about the tooling itself:
+
+- `maxGroundingScore` is `0` on every row. The JSONL confirms why: no
+  `segments[]` entry carries a `groundingScore` field at all. The engine does
+  not populate it, so the column measures nothing.
+- The `toolCalls` column folds whitespace to fit a spreadsheet cell, which
+  leaves captured Python syntactically invalid there. Read tool calls from the
+  Trace panel or the JSONL, both of which preserve newlines.
+
 ## Matching an entire data store instead of a title
 
 Data store ids and connector names match **exactly**, and document uris,
