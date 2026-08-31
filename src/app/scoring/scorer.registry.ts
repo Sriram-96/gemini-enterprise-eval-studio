@@ -18,6 +18,7 @@ import {Inject, Injectable, InjectionToken, inject} from '@angular/core';
 
 import {Scorer} from './scorer';
 import {AutoRaterScorer} from './scorers/auto-rater.scorer';
+import {RougeLScorer} from './scorers/rouge-l.scorer';
 
 /**
  * Every scorer available to the application, in the order they are offered in
@@ -31,6 +32,7 @@ export const SCORERS = new InjectionToken<readonly Scorer[]>('app.scorers', {
   providedIn: 'root',
   factory: () => [
     inject(AutoRaterScorer),
+    inject(RougeLScorer),
   ],
 });
 
