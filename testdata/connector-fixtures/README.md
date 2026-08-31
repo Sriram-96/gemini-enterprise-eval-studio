@@ -146,11 +146,16 @@ identical to a retrieval failure.
 
 ### 3. Run with Source Attribution selected
 
-Upload `queryset.attribution.csv`, pick **Source Attribution** as the scoring
-method, and run.
+Upload `queryset.attribution.csv` and run. **Source Attribution** is selected
+by default along with every other scorer; leave the others on to compare them,
+or uncheck them to keep the run offline and free.
 
-Expected: **27 scored rows at 1.0, and 2 skipped** (the two parental-leave
-rows).
+Expected: **2 skipped** (the two parental-leave rows, which name no source) and
+**27 scored**, of which the low twenties at 1.0 is a healthy result rather than
+the 27 a perfect ceiling would suggest. A handful of follow-up turns answer
+from the previous turn's context and cite nothing, which scores 0 legitimately;
+the reference capture below has four. Investigate a score in the teens or
+lower.
 
 Turns within a conversation share a session and run in order, so stopping a run
 mid-way leaves later turns without the context they assume — which reads as a
@@ -181,35 +186,45 @@ assist tokens. Masking is referentially consistent, so a session or token in
 the CSV still matches the same one in the JSONL and the two files can be read
 side by side.
 
-**Read them for the failures, not the passes.** That run scored 20 rows at 1.0,
-7 at 0.0, one skip and one error, and the three interesting groups are:
+All three registered scorers ran, so every row carries a `score_auto-rater`, a
+`score_rouge-l` and a `score_source-attribution` column.
 
-- **Source drift, caught.** `conv-incident` t2, `conv-oncall` t2,
-  `conv-perdiem` t3 and `conv-coverage` t2 all cite nothing and score 0. Every
+**Read them for the failures, not the passes.** That run scored 23 rows at 1.0,
+4 at 0.0 and skipped 2, and the three interesting groups are:
+
+- **Source drift, caught.** `conv-incident` t2, `conv-perdiem` t3,
+  `conv-pricing` t2 and `conv-coverage` t2 all cite nothing and score 0. Every
   one of their answers was already present verbatim in the previous turn's
   output, and every follow-up that needed genuinely new information did
-  re-ground. The agent re-retrieves only when it must. All four score 0.95–1.0
-  on the auto-rater: **answer quality alone reads them as passes**, which is
-  the entire reason attribution exists as a separate metric.
+  re-ground. The agent re-retrieves only when it must. All four score 0.95 on
+  the auto-rater: **answer quality alone reads them as passes**, which is the
+  entire reason attribution exists as a separate metric.
 - **The version trap, held.** The pre-approval row cites v7 and v6 together and
   uses v6 only for the "previously $1,800" aside. `conv-perdiem` t4 — the
   hardest row here, needing the superseded document to answer "has that rate
   always been the same" — passes.
-- **`conv-pricing`, failed on all three turns.** Turn 1's "Enterprise annual
-  base price" is ambiguous against an engine whose own name contains
-  "enterprise", so it grounded in public Google Cloud pricing pages and turns
-  2–3 stayed anchored there. The same two facts pass as single-turn rows. This
-  is a flaw in how the question is worded, not a retrieval failure — a useful
-  reminder that an ambiguous query invalidates the row rather than the agent.
+- **The two unanswerable rows, skipped rather than failed.** Both parental
+  leave rows have an empty `expected_sources`, so they are recorded as skips
+  and never drag the average down. Both answers correctly decline, which is
+  what the rows are there to check: the agent says the document is not
+  indexed instead of inventing a policy.
+
+Watch the auto-rater and ROUGE-L columns diverge across the whole file. The
+auto rater never drops below 0.85 while ROUGE-L averages 0.12, because the
+goldens are one-line facts and the agent answers in several formatted
+paragraphs that happen to contain them. ROUGE-L is a lexical floor here, not a
+verdict — a reminder to read a scorer against what it actually measures.
 
 Two things the capture shows about the tooling itself:
 
 - `maxGroundingScore` is `0` on every row. The JSONL confirms why: no
   `segments[]` entry carries a `groundingScore` field at all. The engine does
   not populate it, so the column measures nothing.
-- The `toolCalls` column folds whitespace to fit a spreadsheet cell, which
-  leaves captured Python syntactically invalid there. Read tool calls from the
-  Trace panel or the JSONL, both of which preserve newlines.
+- `toolCalls` is empty on every row: this engine answered all 29 queries from
+  retrieval alone, without running code. Note that when the column *is*
+  populated it folds whitespace to fit a spreadsheet cell, which leaves
+  captured Python syntactically invalid there — read tool calls from the Trace
+  panel or the JSONL, both of which preserve newlines.
 
 ## Matching an entire data store instead of a title
 
