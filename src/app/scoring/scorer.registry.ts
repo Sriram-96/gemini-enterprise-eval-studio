@@ -60,9 +60,14 @@ export class ScorerRegistry {
     return this.scorers[0].id;
   }
 
-  /** The selection applied when the config does not name any scorer. */
+  /**
+   * The selection applied when the config does not name any scorer: every
+   * registered scorer, so a run reports what each of them sees unless the
+   * tester deliberately narrows it. `defaultId` stays the primary score
+   * because this keeps registry order.
+   */
   get defaultIds(): string[] {
-    return [this.defaultId];
+    return this.scorers.map(scorer => scorer.id);
   }
 
   /** Looks up a scorer by identifier. */

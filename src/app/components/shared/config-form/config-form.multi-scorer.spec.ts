@@ -114,13 +114,15 @@ describe('ConfigFormComponent multi-scorer selection', () => {
        await setUp([new FakeScorer('a', 'A'), new FakeScorer('b', 'B')]);
        expect(checkboxes().map(input => input.getAttribute('aria-label')))
            .toEqual(['A', 'B']);
-       // Only the default is checked out of the box.
-       expect(checkboxes().map(input => input.checked)).toEqual([true, false]);
+       // Every scorer is checked out of the box.
+       expect(checkboxes().map(input => input.checked)).toEqual([true, true]);
      });
 
   it('should add a scorer to the selection when its checkbox is clicked',
      async () => {
-       await setUp([new FakeScorer('a', 'A'), new FakeScorer('b', 'B')]);
+       await setUp(
+           [new FakeScorer('a', 'A'), new FakeScorer('b', 'B')],
+           {selectedScorers: ['a']});
        checkboxes()[1].click();
        fixture.detectChanges();
 
@@ -142,7 +144,9 @@ describe('ConfigFormComponent multi-scorer selection', () => {
 
   it('should disable the last remaining scorer so it cannot be removed',
      async () => {
-       await setUp([new FakeScorer('a', 'A'), new FakeScorer('b', 'B')]);
+       await setUp(
+           [new FakeScorer('a', 'A'), new FakeScorer('b', 'B')],
+           {selectedScorers: ['a']});
        expect(checkboxes()[0].disabled).toBeTrue();
 
        component.toggleScorer(component.scorers[0]);
@@ -150,7 +154,9 @@ describe('ConfigFormComponent multi-scorer selection', () => {
      });
 
   it('should summarize the selection', async () => {
-    await setUp([new FakeScorer('a', 'A'), new FakeScorer('b', 'B')]);
+    await setUp(
+        [new FakeScorer('a', 'A'), new FakeScorer('b', 'B')],
+        {selectedScorers: ['a']});
     expect(component.getSelectedScorersSummary()).toBe('A');
 
     component.toggleScorer(component.scorers[1]);
@@ -165,19 +171,31 @@ describe('ConfigFormComponent multi-scorer selection', () => {
     expect(mockStateService.setConfig).toHaveBeenCalled();
   });
 
-  it('should fall back to the default when the config names no scorer',
+  it('should fall back to every scorer when the config names none',
      async () => {
        await setUp(
            [new FakeScorer('a', 'A'), new FakeScorer('b', 'B')],
            {selectedScorers: []});
-       expect(component.config.selectedScorers).toEqual(['a']);
+       expect(component.config.selectedScorers).toEqual(['a', 'b']);
      });
+
+  it('should keep a narrower selection the tester already made', async () => {
+    await setUp(
+        [new FakeScorer('a', 'A'), new FakeScorer('b', 'B')],
+        {selectedScorers: ['b']});
+
+    expect(component.config.selectedScorers).toEqual(['b']);
+    expect(checkboxes().map(input => input.checked)).toEqual([false, true]);
+  });
 
   it('should render a config input only while a selected scorer needs it',
      async () => {
-       await setUp([
-         new FakeScorer('a', 'A'), new FakeScorer('b', 'B', ['autoRaterModel'])
-       ]);
+       await setUp(
+           [
+             new FakeScorer('a', 'A'),
+             new FakeScorer('b', 'B', ['autoRaterModel'])
+           ],
+           {selectedScorers: ['a']});
        expect(component.usesConfigKey('autoRaterModel')).toBeFalse();
 
        component.toggleScorer(component.scorers[1]);

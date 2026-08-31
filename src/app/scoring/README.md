@@ -99,8 +99,11 @@ answer.
 
 That is all that is required. The configuration form picks the new scorer up
 automatically: the **Scoring Methods** picker renders a checkbox per registered
-scorer (and hides itself entirely when only one is registered), and the first
-entry in the list is the default selection.
+scorer (and hides itself entirely when only one is registered), and every
+scorer is checked by default, so registering one opts every new run into it.
+The first entry stays the primary score. A tester who unchecks some keeps that
+narrower selection; the default only applies when the config names no scorer at
+all.
 
 ## Optional hooks
 
