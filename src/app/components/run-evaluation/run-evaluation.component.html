@@ -69,7 +69,7 @@
       [(csvRows)]="uploadedRows"
       (prev)="prevStep()"
       (run)="startEvaluation($event)"
-      [instruction]="'CSV file with at least \'query\' and \'golden\' columns'"
+      [instruction]="'CSV file with at least \'query\' and \'golden\' columns, plus an optional \'expected_sources\' column for the Source Attribution scorer'"
       [buttonText]="'Run Evaluation'"
       [requiredColumns]="['query', 'golden']"
     ></app-file-upload>
@@ -82,6 +82,8 @@
       [columns]="columns"
       [title]="'Evaluation Results'"
       [exportFileName]="'eval_results'"
+      [rowActionLabel]="'Trace'"
+      (rowAction)="inspectTrace($event)"
     >
       <div class="flex justify-between items-center w-full" footer>
         <button
@@ -89,6 +91,13 @@
           class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 transition-colors font-medium"
         >
           Back to Upload
+        </button>
+        <button
+          *ngIf="hasTraces()"
+          (click)="exportTraces()"
+          class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 transition-colors font-medium"
+        >
+          Download traces (JSONL)
         </button>
         <button
           (click)="openReRateModal()"
@@ -112,6 +121,9 @@
     (stop)="stopEvaluation()"
   ></app-progress-bar>
 </div>
+
+<!-- Trace Inspector -->
+<app-trace-panel [row]="inspectedRow" (closed)="inspectedRow = null"></app-trace-panel>
 
 <!-- Re-rate Modal -->
 <div *ngIf="showReRateModal" class="fixed inset-0 z-50 overflow-y-auto bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">

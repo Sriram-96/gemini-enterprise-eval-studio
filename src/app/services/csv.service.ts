@@ -56,8 +56,30 @@ export class CsvService {
    * @param filename The name of the file to create.
    */
   exportCSV(data: Array<object>, filename: string) {
-    const csv = Papa.unparse(data);
-    const blob = new Blob([csv], {type: 'application/octet-stream'});
+    this.download(Papa.unparse(data), filename);
+  }
+
+  /**
+   * Exports data as newline-delimited JSON, one object per line.
+   *
+   * Used for evidence too nested to survive a spreadsheet cell, such as the
+   * verbatim assist stream behind each row: a reader can stream the file
+   * record by record instead of parsing one enormous array.
+   * @param data The objects to export, one per line.
+   * @param filename The name of the file to create.
+   */
+  exportJSONL(data: Array<object>, filename: string) {
+    const jsonl = data.map(entry => JSON.stringify(entry)).join('\n');
+    this.download(jsonl, filename);
+  }
+
+  /**
+   * Prompts the browser to save text as a file.
+   * @param content The file's contents.
+   * @param filename The name of the file to create.
+   */
+  private download(content: string, filename: string) {
+    const blob = new Blob([content], {type: 'application/octet-stream'});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

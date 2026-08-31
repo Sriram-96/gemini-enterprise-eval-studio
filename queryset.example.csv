@@ -1,9 +1,9 @@
-query,golden,conversation_id,turn
-What is the capital of France?,Paris.,conv-france,1
-What river runs through it?,The Seine.,conv-france,2
-What is its population?,About 2.1 million in the city proper.,conv-france,3
-What is the tallest mountain on Earth?,Mount Everest.,conv-everest,1
-How tall is it?,"8,849 metres (29,032 feet).",conv-everest,2
-Which two countries does it border?,Nepal and China.,conv-everest,3
-Who wrote Hamlet?,William Shakespeare.,,
-What is the boiling point of water at sea level?,100°C (212°F).,,
+query,golden,conversation_id,turn,expected_sources
+What is the capital of France?,Paris.,conv-france,1,wikipedia.org
+What river runs through it?,The Seine.,conv-france,2,wikipedia.org
+What is its population?,About 2.1 million in the city proper.,conv-france,3,wikipedia.org
+What is the tallest mountain on Earth?,Mount Everest.,conv-everest,1,britannica.com
+How tall is it?,"8,849 metres (29,032 feet).",conv-everest,2,britannica.com
+Which two countries does it border?,Nepal and China.,conv-everest,3,britannica.com
+Who wrote Hamlet?,William Shakespeare.,,,wikipedia.org
+What is the boiling point of water at sea level?,100°C (212°F).,,,

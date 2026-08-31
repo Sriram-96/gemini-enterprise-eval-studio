@@ -27,6 +27,7 @@ import {ScorerRegistry} from '../../../scoring/scorer.registry';
 import {AuthService} from '../../../services/auth.service';
 import {EvalBackendService} from '../../../services/eval-backend.service';
 import {StateService} from '../../../services/state.service';
+import {ConnectorMetadata, inferConnectorMetadata} from '../connector.util';
 import {InfoTooltipComponent} from '../../shared/info-tooltip/info-tooltip.component';
 
 /**
@@ -43,62 +44,6 @@ interface EnginesResponse {
   engines?: Engine[];
 }
 
-
-interface ConnectorRule {
-  readonly key: string;
-  readonly displayName: string;
-  readonly dataSource: string;
-  readonly matchers: readonly string[];
-}
-
-const CONNECTOR_RULES: readonly ConnectorRule[] = [
-  {
-    key: 'NOTION',
-    displayName: 'Notion',
-    dataSource: 'NOTION',
-    matchers: ['notion']
-  },
-  {key: 'JIRA', displayName: 'Jira', dataSource: 'JIRA', matchers: ['jira']},
-  {
-    key: 'CONFLUENCE',
-    displayName: 'Confluence',
-    dataSource: 'CONFLUENCE',
-    matchers: ['confluence']
-  },
-  {
-    key: 'SALESFORCE',
-    displayName: 'Salesforce',
-    dataSource: 'SALESFORCE',
-    matchers: ['salesforce']
-  },
-  {
-    key: 'SHAREPOINT',
-    displayName: 'SharePoint',
-    dataSource: 'SHAREPOINT',
-    matchers: ['sharepoint']
-  },
-  {
-    key: 'SERVICENOW',
-    displayName: 'ServiceNow',
-    dataSource: 'SERVICENOW',
-    matchers: ['servicenow', 'service-now', 'service now']
-  },
-  {
-    key: 'BIG_QUERY',
-    displayName: 'BigQuery',
-    dataSource: 'BIG_QUERY',
-    matchers: ['bigquery', 'bq-']
-  },
-  {
-    key: 'GCS',
-    displayName: 'Cloud Storage',
-    dataSource: 'GCS',
-    matchers: ['gcs', 'cloud-storage', 'cloud storage']
-  },
-];
-
-const DATA_SOURCE_DISPLAY_NAMES: Record<string, string> =
-    Object.fromEntries(CONNECTOR_RULES.map(r => [r.dataSource, r.displayName]));
 
 /**
  * Component for configuring evaluation settings.
@@ -368,40 +313,8 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   /**
    * Infers normalized connector metadata (key, display name, and data source) from a component or ID string.
    */
-  inferConnectorMetadata(componentOrId: { id?: string, displayName?: string, dataSource?: string } | string): { key: string, displayName: string, dataSource?: string } {
-    if (typeof componentOrId === 'object') {
-      if (componentOrId.dataSource) {
-        let name = componentOrId.displayName || componentOrId.dataSource;
-        if (!componentOrId.displayName || componentOrId.displayName === componentOrId.dataSource) {
-          name = DATA_SOURCE_DISPLAY_NAMES[componentOrId.dataSource] || name;
-        }
-        return { key: componentOrId.dataSource, displayName: name, dataSource: componentOrId.dataSource };
-      }
-      const lowerId = (componentOrId.id || '').toLowerCase();
-      const lowerName = (componentOrId.displayName || '').toLowerCase();
-      const matchedRule = CONNECTOR_RULES.find(rule =>
-          rule.matchers.some(m => lowerId.includes(m) || lowerName.includes(m)));
-      if (matchedRule) {
-        return {
-          key: matchedRule.key,
-          displayName: matchedRule.displayName,
-          dataSource: matchedRule.dataSource
-        };
-      }
-      return { key: componentOrId.id || 'unknown', displayName: componentOrId.displayName || componentOrId.id || 'Connector' };
-    } else {
-      const lower = componentOrId.toLowerCase();
-      const matchedRule = CONNECTOR_RULES.find(rule =>
-          rule.matchers.some(m => lower.includes(m)));
-      if (matchedRule) {
-        return {
-          key: matchedRule.key,
-          displayName: matchedRule.displayName,
-          dataSource: matchedRule.dataSource
-        };
-      }
-      return { key: componentOrId, displayName: componentOrId };
-    }
+  inferConnectorMetadata(componentOrId: { id?: string, displayName?: string, dataSource?: string } | string): ConnectorMetadata {
+    return inferConnectorMetadata(componentOrId);
   }
 
   private isValidConnector(component: CollectionComponent): boolean {

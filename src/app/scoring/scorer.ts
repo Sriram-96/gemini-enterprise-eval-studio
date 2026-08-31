@@ -15,6 +15,7 @@
  */
 
 import {AppConfig} from '../models/app-config.model';
+import {AssistTrace} from '../models/trace.model';
 
 /**
  * Everything a scorer receives about a single evaluated row.
@@ -28,6 +29,17 @@ export interface ScoringRequest {
   golden?: string;
   /** The active application configuration. */
   config: AppConfig;
+  /**
+   * The citations and tool calls behind the response, letting a scorer judge
+   * how the agent reached its answer rather than only what it said. Absent
+   * when the row predates trace capture or the call failed before any reply.
+   */
+  trace?: AssistTrace;
+  /**
+   * The row's `expected_sources` column: the documents, data stores or
+   * connectors the agent was supposed to consult, separated by `;`.
+   */
+  expectedSources?: string;
 }
 
 /**
@@ -36,6 +48,13 @@ export interface ScoringRequest {
 export interface ScoreResult {
   /** Normalized score, where 0.0 is the worst and 1.0 the best. */
   score: number;
+  /**
+   * Set when the scorer had nothing to judge, so the row is recorded as a skip
+   * rather than as a zero that would drag an average down. Use this for input
+   * the `requiresGolden` check cannot express, such as a row that names no
+   * expected sources.
+   */
+  skipped?: boolean;
   /**
    * Optional scorer specific breakdown, such as a rationale or per-criterion
    * sub-scores. Not surfaced in the UI today.

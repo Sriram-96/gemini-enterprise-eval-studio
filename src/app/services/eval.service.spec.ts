@@ -398,4 +398,155 @@ describe('EvalService', () => {
       expect(result.turnId).toBe('turn-1');
     });
   });
+
+  describe('processRow trace capture', () => {
+    let service: EvalService;
+
+    const DOCUMENT =
+        'projects/p/locations/global/collections/default_collection/dataStores/confluence-wiki/branches/0/documents/d1';
+
+    beforeEach(() => {
+      service = setUp();
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+    });
+
+    /**
+     * Rebuilds the injector around the given scorers, discarding the one the
+     * `beforeEach` above already instantiated.
+     * @param scorers The scorers to register.
+     */
+    function useScorers(scorers: Scorer[]) {
+      TestBed.resetTestingModule();
+      service = setUp(scorers);
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+    }
+
+    /** A streamed response made of the given raw items. */
+    function stream(...items: Array<Record<string, unknown>>) {
+      return Promise.resolve(new Response(JSON.stringify(items)));
+    }
+
+    it('should capture the documents behind an answer as columns', async () => {
+      mockBackendService.callAssistSpy.and.returnValue(stream(
+          {answer: {replies: [{groundedContent: {content: {text: 'Restart the pod.'}}}]}},
+          {
+            answer: {
+              replies: [{
+                groundedContent: {
+                  textGroundingMetadata: {
+                    references: [{
+                      content: 'To restart, run kubectl…',
+                      documentMetadata: {
+                        document: DOCUMENT,
+                        title: 'Incident Runbook',
+                        uri: 'https://wiki/runbook'
+                      }
+                    }],
+                    segments: [{
+                      text: 'Restart the pod.',
+                      referenceIndices: [0],
+                      groundingScore: 0.92
+                    }]
+                  }
+                }
+              }]
+            }
+          }));
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.fetched).toBe('Restart the pod.');
+      expect(result.citedSources)
+          .toBe('Incident Runbook — https://wiki/runbook');
+      expect(result.citedDataStores).toBe('confluence-wiki');
+      expect(result.citedConnectors).toBe('Confluence');
+      expect(result.maxGroundingScore).toBe(0.92);
+      expect(result.trace!.sources.length).toBe(1);
+      expect(result.trace!.segments[0].sourceKeys).toEqual([DOCUMENT]);
+    });
+
+    it('should keep the raw stream so the journey can be replayed', async () => {
+      const items = [
+        {assistToken: 'token-1'},
+        {answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}},
+      ];
+      mockBackendService.callAssistSpy.and.returnValue(stream(...items));
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.trace!.raw).toEqual(items);
+    });
+
+    it('should record tool calls the agent made', async () => {
+      mockBackendService.callAssistSpy.and.returnValue(stream({
+        answer: {
+          replies: [
+            {groundedContent: {content: {executableCode: {code: 'sum([1,2])'}}}},
+            {
+              groundedContent: {
+                content:
+                    {codeExecutionResult: {outcome: 'OUTCOME_OK', output: '3'}}
+              }
+            },
+          ]
+        }
+      }));
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.toolCalls)
+          .toBe('executableCode: sum([1,2])\ncodeExecutionResult: OUTCOME_OK — 3');
+    });
+
+    it('should set every trace column even when nothing was cited', async () => {
+      // The CSV header is derived from the first row alone, so an absent key
+      // would drop the column from the whole export.
+      mockBackendService.callAssistSpy.and.returnValue(
+          stream({answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}}));
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.citedSources).toBe('');
+      expect(result.citedDataStores).toBe('');
+      expect(result.citedConnectors).toBe('');
+      expect(result.toolCalls).toBe('');
+      expect(result.maxGroundingScore).toBe(0);
+    });
+
+    it('should still report the trace columns when the call fails', async () => {
+      mockBackendService.callAssistSpy.and.returnValue(
+          Promise.resolve(new Response('', {status: 500})));
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.fetched).toContain('Error');
+      expect(result.citedSources).toBe('');
+      expect(result.toolCalls).toBe('');
+      expect(result.maxGroundingScore).toBe(0);
+    });
+
+    it('should pass the trace and expected sources to the scorers', async () => {
+      const spy = new FakeScorer('spy', 'Spy', async () => ({score: 1}));
+      useScorers([spy]);
+      mockBackendService.callAssistSpy.and.returnValue(
+          stream({answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}}));
+
+      await service.processRow(
+          {query: 'q', golden: 'g', expected_sources: 'confluence-wiki'});
+
+      expect(spy.requests[0].expectedSources).toBe('confluence-wiki');
+      expect(spy.requests[0].trace).toBeDefined();
+    });
+
+    it('should carry expected_sources onto the row so re-rating can use it',
+       async () => {
+         mockBackendService.callAssistSpy.and.returnValue(stream(
+             {answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}}));
+
+         const result = await service.processRow(
+             {query: 'q', golden: 'g', expected_sources: 'jira-prod'});
+
+         expect(result.expectedSources).toBe('jira-prod');
+       });
+  });
 });

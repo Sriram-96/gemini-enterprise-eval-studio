@@ -15,7 +15,7 @@
  */
 
 import {CommonModule, formatDate} from '@angular/common';
-import {Component, Input, OnChanges} from '@angular/core';
+import {Component, EventEmitter, Input, OnChanges, Output} from '@angular/core';
 
 import {CsvService} from '../../../services/csv.service';
 
@@ -47,6 +47,14 @@ export class CsvTableComponent implements OnChanges {
   @Input() columns: ColumnDef[] = [];
   @Input() title = '';
   @Input() exportFileName: string = 'eval_results';
+  /**
+   * Label of an optional per-row button, rendered in a trailing column. Left
+   * unset, no such column appears, so tables that have nothing to offer per
+   * row are unaffected.
+   */
+  @Input() rowActionLabel?: string;
+  /** Emits the index of the row whose action button was clicked. */
+  @Output() rowAction = new EventEmitter<number>();
 
   hasTruncated = false;
 

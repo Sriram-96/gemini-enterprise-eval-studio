@@ -29,6 +29,10 @@ violate data privacy policies.
     (TTFT), Time To First Answer Token (TTFA), and Time To Last Token (TTLT) in seconds (s).
 -   **Dual Metric Definition**: Support for both LLM-as-a-Judge rubrics and
     programmatic evaluator modules.
+-   **Full Trace Capture**: Every row records the documents the agent cited,
+    the data stores and connectors they came from, the tools it ran and its
+    thinking, so a tester can confirm *how* an answer was reached and not only
+    that it sounded plausible. See [Verifying Retrieval](#verifying-retrieval).
 
 ## Data Privacy and Governance
 
@@ -116,6 +120,31 @@ Then start the server in either **Auth Mode** (full stack) or **No-Auth Mode** (
   npm run start:no-auth
   ```
   By default, the frontend listens on port 4200.
+
+## Verifying Retrieval
+
+A confident answer is not evidence of correct retrieval: an agent that cites
+the wrong document, or none, can still sound right. Every evaluation run
+therefore captures the journey behind each answer, not just its text.
+
+**In the results table**, each row gains a `Sources` and a `Connectors` column,
+plus a **Trace** button opening an inspector that shows, in the order the work
+happened: the model's thinking, the tools it ran, every document it cited (with
+title, uri, connector and grounding score), and which claim in the answer rests
+on which document.
+
+**In the exports**, the CSV carries flattened `citedSources`,
+`citedDataStores`, `citedConnectors`, `toolCalls` and `maxGroundingScore`
+columns, and **Download traces (JSONL)** writes one record per row holding the
+verbatim `streamAssist` stream — everything the API sent, for auditors who need
+to replay a run rather than skim it.
+
+**As a metric**, add an `expected_sources` column to your query set and select
+the **Source Attribution** scorer. It fails any row whose answer did not cite
+what you expected, so retrieval regressions surface the same way answer-quality
+regressions already do. See
+[src/app/scoring/README.md](src/app/scoring/README.md) for the matching rules,
+and `queryset.example.csv` for a worked example.
 
 ## Running with Docker
 
