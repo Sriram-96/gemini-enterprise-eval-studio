@@ -233,7 +233,7 @@ describe('ConfigFormComponent', () => {
       expect(component.config.selectedDataStores).toEqual([]);
     });
 
-    it('should include gemini-2.5-pro and gemini-3.5-flash as fallbacks if they are not in modelConfigs',
+    it('should include gemini-2.5-pro, gemini-2.5-flash and gemini-3.5-flash as fallbacks if they are not in modelConfigs',
        () => {
          const fixture = TestBed.createComponent(ConfigFormComponent);
          const component = fixture.componentInstance;
@@ -249,6 +249,7 @@ describe('ConfigFormComponent', () => {
 
          expect(component.models).toContain('auto');
          expect(component.models).toContain('gemini-2.5-pro');
+         expect(component.models).toContain('gemini-2.5-flash');
          expect(component.models).toContain('gemini-3.5-flash');
        });
 
