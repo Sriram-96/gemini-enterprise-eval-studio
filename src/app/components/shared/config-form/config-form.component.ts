@@ -286,7 +286,11 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
         }
       }
 
-      const fallbackModels = ['gemini-2.5-pro', 'gemini-3.5-flash'];
+      // Offered only when the engine does not report them itself. Every entry
+      // has to be an id streamAssist actually accepts, or the dropdown gains
+      // an option that fails the run with a 400.
+      const fallbackModels =
+          ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-3.5-flash'];
       for (const model of fallbackModels) {
         if (!selected.modelConfigs || !(model in selected.modelConfigs)) {
           if (!this.models.includes(model)) {
