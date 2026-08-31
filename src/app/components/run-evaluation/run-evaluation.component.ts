@@ -186,7 +186,11 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
         for (const scorer of scorers) {
           const result =
               scorerResults?.find(r => r.scorerId === scorer.scorerId);
-          flat[scoreKey(scorer.scorerId)] = result ? result.score : '';
+          // A skipped scorer had nothing to judge, which is not the same as
+          // judging the row worthless. Reporting its placeholder zero would
+          // drag the column's average down and read as a failure.
+          flat[scoreKey(scorer.scorerId)] =
+              result && !result.skipped ? result.score : '';
           if (anyError) {
             flat[scoreErrorKey(scorer.scorerId)] = result?.error ?? '';
           }

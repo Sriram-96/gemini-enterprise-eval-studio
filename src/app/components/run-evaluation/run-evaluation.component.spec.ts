@@ -414,6 +414,22 @@ describe('RunEvaluationComponent', () => {
       expect(component.displayResults[0]['scorerResults']).toBeUndefined();
     });
 
+    it('should leave a skipped scorer\'s cell empty rather than zero', () => {
+      const fixture = TestBed.createComponent(RunEvaluationComponent);
+      const component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      resultsSubject.next([rowWith([
+        {scorerId: 'first', displayName: 'First', score: 0.25},
+        // Nothing to judge: reporting the placeholder zero would read as a
+        // failing row and drag the column's average down.
+        {scorerId: 'second', displayName: 'Second', score: 0, skipped: true},
+      ])]);
+
+      expect(component.displayResults[0]['score_second']).toBe('');
+      expect(component.displayResults[0]['score_first']).toBe(0.25);
+    });
+
     it('should add per-scorer error columns only when a scorer failed', () => {
       const fixture = TestBed.createComponent(RunEvaluationComponent);
       const component = fixture.componentInstance;
