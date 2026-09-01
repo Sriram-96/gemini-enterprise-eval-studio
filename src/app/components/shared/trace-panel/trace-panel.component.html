@@ -1,0 +1,120 @@
+<div
+  *ngIf="row"
+  class="fixed inset-0 z-50 overflow-y-auto bg-gray-500 bg-opacity-75 flex items-center justify-center p-4"
+>
+  <div class="bg-white rounded-lg shadow-xl transform transition-all max-w-3xl w-full max-h-[85vh] overflow-y-auto p-6 space-y-5">
+    <div class="flex justify-between items-start">
+      <div>
+        <h3 class="text-lg font-medium text-gray-900">Answer Trace</h3>
+        <p class="text-sm text-gray-500 mt-1">{{ row.query }}</p>
+      </div>
+      <button
+        (click)="close()"
+        class="bg-white border border-gray-300 text-gray-700 px-3 py-1 rounded-md hover:bg-gray-50 transition-colors text-sm font-medium"
+      >
+        Close
+      </button>
+    </div>
+
+    <p *ngIf="!hasEvidence" class="text-sm text-gray-500 italic">
+      This answer carried no citations, tool calls or thoughts. The agent did not
+      ground it in any retrieved document.
+    </p>
+
+    <!-- Thinking -->
+    <div *ngIf="thoughts.length">
+      <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Thinking</h4>
+      <ol class="list-decimal list-inside space-y-1 text-sm text-gray-600">
+        <li *ngFor="let thought of thoughts">{{ thought }}</li>
+      </ol>
+    </div>
+
+    <!-- Tool calls -->
+    <div *ngIf="row.trace?.toolCalls?.length">
+      <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">Tool Calls</h4>
+      <div
+        *ngFor="let call of row.trace?.toolCalls"
+        class="border border-gray-200 rounded-md p-3 mb-2 bg-gray-50"
+      >
+        <div class="text-xs font-medium text-gray-500 uppercase">{{ call.kind }}</div>
+        <pre
+          *ngIf="call.code"
+          class="mt-1 text-xs text-gray-800 whitespace-pre-wrap font-mono"
+        >{{ call.code }}</pre>
+        <div *ngIf="call.outcome" class="mt-1 text-xs text-gray-700">{{ call.outcome }}</div>
+        <pre
+          *ngIf="call.output"
+          class="mt-1 text-xs text-gray-800 whitespace-pre-wrap font-mono"
+        >{{ call.output }}</pre>
+      </div>
+    </div>
+
+    <!-- Cited sources -->
+    <div *ngIf="sources.length">
+      <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">
+        Cited Sources ({{ sources.length }})
+      </h4>
+      <div
+        *ngFor="let source of sources"
+        class="border border-gray-200 rounded-md p-3 mb-2"
+      >
+        <div class="flex justify-between items-start gap-3">
+          <div class="text-sm font-medium text-gray-900">
+            {{ source.title || source.uri || source.document || "(untitled)" }}
+            <span *ngIf="source.pageIdentifier" class="text-gray-500 font-normal">
+              — p. {{ source.pageIdentifier }}</span
+            >
+          </div>
+          <span
+            *ngIf="source.groundingScore !== undefined"
+            class="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+            >{{ source.groundingScore }}</span
+          >
+        </div>
+        <div class="mt-1 flex flex-wrap gap-2 text-xs">
+          <span
+            *ngIf="source.connector"
+            class="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-purple-100 text-purple-800"
+            >{{ source.connector }}</span
+          >
+          <span
+            *ngIf="source.dataStoreId"
+            class="inline-flex items-center px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-700"
+            >{{ source.dataStoreId }}</span
+          >
+          <span *ngIf="source.domain" class="text-gray-500">{{ source.domain }}</span>
+        </div>
+        <a
+          *ngIf="source.uri"
+          [href]="source.uri"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="mt-1 block text-xs text-blue-600 hover:underline break-all"
+          >{{ source.uri }}</a
+        >
+        <p *ngIf="source.snippet" class="mt-2 text-xs text-gray-600 whitespace-pre-wrap">
+          {{ source.snippet }}
+        </p>
+      </div>
+    </div>
+
+    <!-- Per-claim attribution -->
+    <div *ngIf="attributedSegments.length">
+      <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-2">
+        Claim Attribution
+      </h4>
+      <div
+        *ngFor="let segment of attributedSegments"
+        class="border-l-2 border-blue-300 pl-3 mb-3"
+      >
+        <p class="text-sm text-gray-800">{{ segment.text }}</p>
+        <p class="text-xs text-gray-500 mt-1">
+          {{ labelSources(segment) }}
+          <span *ngIf="segment.groundingScore !== undefined">
+            · score {{ segment.groundingScore }}</span
+          >
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

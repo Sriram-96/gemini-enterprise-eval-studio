@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {CommonModule} from '@angular/common';
+import {CommonModule, formatDate} from '@angular/common';
 import {ChangeDetectorRef, Component, OnDestroy, OnInit} from '@angular/core';
 import {FormsModule} from '@angular/forms';
 import {Subject} from 'rxjs';
@@ -25,12 +25,14 @@ import {CSVRow} from '../../models/csv-row.model';
 import {ResultRow} from '../../models/result-row.model';
 import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
 import {ScorerRegistry} from '../../scoring/scorer.registry';
+import {CsvService} from '../../services/csv.service';
 import {EvalService} from '../../services/eval.service';
 import {StateService} from '../../services/state.service';
 import {ConfigFormComponent} from '../shared/config-form/config-form.component';
 import {ColumnDef, CsvTableComponent} from '../shared/csv-table/csv-table.component';
 import {FileUploadComponent} from '../shared/file-upload/file-upload.component';
 import {ProgressBarComponent} from '../shared/progress-bar/progress-bar.component';
+import {TracePanelComponent} from '../shared/trace-panel/trace-panel.component';
 
 const MAX_CONCURRENT_REQUESTS_FOR_EVALUATION = 5;
 
@@ -39,6 +41,8 @@ const BASE_COLUMNS: readonly ColumnDef[] = [
   {header: 'Query', key: 'query', truncate: true},
   {header: 'Golden', key: 'golden', truncate: true},
   {header: 'Fetched', key: 'fetched', type: 'markdown', truncate: true},
+  {header: 'Sources', key: 'citedSources', truncate: true},
+  {header: 'Connectors', key: 'citedConnectors', truncate: true},
   {header: 'Conversation', key: 'conversationId', truncate: true},
   {header: 'Turn', key: 'turn', type: 'number'},
   {header: 'TTFT (s)', key: 'ttft', type: 'number'},
@@ -72,7 +76,7 @@ function scoreErrorKey(scorerId: string): string {
   standalone: true,
   imports: [
     CommonModule, ConfigFormComponent, FileUploadComponent, CsvTableComponent,
-    ProgressBarComponent, FormsModule
+    ProgressBarComponent, TracePanelComponent, FormsModule
   ],
   templateUrl: './run-evaluation.component.html'
 })
@@ -87,6 +91,8 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   completedRows = 0;
   showReRateModal = false;
   reRateInstruction = '';
+  /** The row whose trace is open in the inspector, if any. */
+  inspectedRow: ResultRow|null = null;
   errorMessage: string | null = null;
   private readonly destroy$ = new Subject<void>();
   private currentRunId = 0;
@@ -101,7 +107,48 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
 
   constructor(
       private stateService: StateService, private evalService: EvalService,
-      private scorerRegistry: ScorerRegistry, private cdr: ChangeDetectorRef) {}
+      private scorerRegistry: ScorerRegistry, private csvService: CsvService,
+      private cdr: ChangeDetectorRef) {}
+
+  /**
+   * Opens the trace inspector for a row of the results table.
+   *
+   * `displayResults` is built one-for-one from `results`, so the table's row
+   * index selects the untrimmed row that still carries the trace.
+   * @param index Index of the clicked row.
+   */
+  inspectTrace(index: number) {
+    this.inspectedRow = this.results[index] ?? null;
+    this.cdr.detectChanges();
+  }
+
+  /** Whether any row captured a trace worth downloading. */
+  hasTraces(): boolean {
+    return this.results.some(row => !!row.trace?.raw.length);
+  }
+
+  /**
+   * Downloads the verbatim assist stream of every row as JSONL.
+   *
+   * Kept out of the CSV deliberately: the raw stream is what an auditor
+   * replays, and folding it into a spreadsheet cell would make both artifacts
+   * worse.
+   */
+  exportTraces() {
+    const formattedDate =
+        formatDate(new Date(), 'yyyy-MM-dd_HH-mm-ss', 'en-US');
+    this.csvService.exportJSONL(
+        this.results.map(row => ({
+                           query: row.query,
+                           conversationId: row.conversationId,
+                           turn: row.turn,
+                           assistToken: row.assistToken,
+                           session: row.session,
+                           turnId: row.turnId,
+                           raw: row.trace?.raw ?? []
+                         })),
+        `eval_traces_${formattedDate}.jsonl`);
+  }
 
   ngOnInit() {
     this.stateService.results$.pipe(takeUntil(this.destroy$)).subscribe(r => {
@@ -131,12 +178,19 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
             })),
       ];
       this.displayResults = this.results.map(row => {
-        const {scorerResults, ...rest} = row;
+        // `trace` is dropped alongside `scorerResults`: both are structured
+        // objects that would serialize into an unreadable CSV cell. The trace
+        // reaches the user through the inspector and the JSONL export instead.
+        const {scorerResults, trace, ...rest} = row;
         const flat: Record<string, unknown> = {...rest};
         for (const scorer of scorers) {
           const result =
               scorerResults?.find(r => r.scorerId === scorer.scorerId);
-          flat[scoreKey(scorer.scorerId)] = result ? result.score : '';
+          // A skipped scorer had nothing to judge, which is not the same as
+          // judging the row worthless. Reporting its placeholder zero would
+          // drag the column's average down and read as a failure.
+          flat[scoreKey(scorer.scorerId)] =
+              result && !result.skipped ? result.score : '';
           if (anyError) {
             flat[scoreErrorKey(scorer.scorerId)] = result?.error ?? '';
           }
@@ -148,7 +202,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
 
     this.columns = [...BASE_COLUMNS, SINGLE_SCORE_COLUMN];
     this.displayResults = this.results.map(row => {
-      const {scorerResults, ...rest} = row;
+      const {scorerResults, trace, ...rest} = row;
       return rest as Record<string, unknown>;
     });
   }
@@ -360,10 +414,14 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
 
       // Every scorer runs, one after another, so an unfetched row still gets
       // an entry per scorer and the score columns stay aligned.
+      // The trace and the expected sources ride along on the row precisely so
+      // that re-rating, which never sees the uploaded CSV again, can still run
+      // the scorers that judge citations rather than wording.
       const scorerResults: ScorerRunResult[] = row.fetched ?
           await this.evalService.scoreAll(
               {query: row.query, response: row.fetched, golden: row.golden,
-               config}) :
+               config, trace: row.trace,
+               expectedSources: row.expectedSources}) :
           scorers.map(scorer => ({
                         scorerId: scorer.id,
                         displayName: scorer.displayName,

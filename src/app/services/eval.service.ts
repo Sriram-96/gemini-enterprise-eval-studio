@@ -18,11 +18,13 @@ import {Injectable} from '@angular/core';
 
 import {CSVRow} from '../models/csv-row.model';
 import {ResultRow} from '../models/result-row.model';
+import {summarizeTrace} from '../models/trace.model';
 import {ScorerRunResult, ScoringRequest, summarizeScorerResults} from '../scoring/scorer';
 import {ScorerRegistry} from '../scoring/scorer.registry';
 
 import {EvalBackendService} from './eval-backend.service';
 import {StateService} from './state.service';
+import {TraceCollector} from './trace-collector';
 
 
 
@@ -114,6 +116,7 @@ export class EvalService {
     let ttfa = 0;
     let fullText = '';
     const thoughts: string[] = [];
+    const traceCollector = new TraceCollector();
     let assistToken = '';
     let isFirstChunk = true;
     let isFirstUserChunk = true;
@@ -180,6 +183,8 @@ export class EvalService {
                 sessionInfo = item.sessionInfo;
               }
 
+              traceCollector.addRawItem(item);
+
               if (item.answer?.state === 'SKIPPED') {
                 const reason =
                     item.answer?.assistSkippedReasons?.[0] || 'Unknown reason';
@@ -188,7 +193,15 @@ export class EvalService {
               }
               const replies = item.answer?.replies || [];
               for (const reply of replies) {
-                const content = reply.groundedContent?.content;
+                const groundedContent = reply.groundedContent;
+
+                // A reply's content and its grounding metadata are
+                // independent: one can carry the documents behind an earlier
+                // reply's text and no content of its own, so the citations
+                // must be collected outside the `content` check below.
+                traceCollector.addGroundedContent(groundedContent);
+
+                const content = groundedContent?.content;
                 if (content) {
                   const text = content.text;
                   const thought = content.thought;
@@ -230,15 +243,27 @@ export class EvalService {
 
       const ttlt = Date.now() - startTime;
 
+      const trace = traceCollector.build();
+      const expectedSources = row['expected_sources'] || '';
+
       onProgress?.('score');
-      const scorerResults = await this.scoreAll(
-          {query: row.query, response: fullText, golden: row.golden, config});
+      const scorerResults = await this.scoreAll({
+        query: row.query,
+        response: fullText,
+        golden: row.golden,
+        config,
+        trace,
+        expectedSources
+      });
 
       return {
         query: row.query,
         golden: row.golden || '',
         fetched: fullText,
         thoughts: thoughts.join('\n'),
+        ...summarizeTrace(trace),
+        trace,
+        expectedSources,
         ttft: Number((ttft / 1000).toFixed(2)),
         ttfa: Number((ttfa / 1000).toFixed(2)),
         ttlt: Number((ttlt / 1000).toFixed(2)),
@@ -253,13 +278,18 @@ export class EvalService {
 
     } catch (error) {
       console.error('Error processing row:', error);
+      const trace = traceCollector.build();
       return {
         query: row.query,
         golden: row.golden || '',
         fetched: 'Error: ' + error,
-        // Whatever the model managed to think before the failure is still
-        // worth keeping, and the key must exist so the column survives export.
+        // Whatever the model managed to think and cite before the failure is
+        // still worth keeping, and the keys must exist so the columns survive
+        // export.
         thoughts: thoughts.join('\n'),
+        ...summarizeTrace(trace),
+        trace,
+        expectedSources: row['expected_sources'] || '',
         ttft: 0,
         ttfa: 0,
         ttlt: 0,
@@ -306,6 +336,9 @@ export class EvalService {
       try {
         const result = await scorer.score(request);
         entry.score = result.score;
+        if (result.skipped) {
+          entry.skipped = true;
+        }
         if (result.details) {
           entry.details = result.details;
         }

@@ -15,6 +15,7 @@
  */
 
 import {ScorerRunResult} from '../scoring/scorer';
+import {AssistTrace} from './trace.model';
 
 /**
  * Represents a row in the evaluation results.
@@ -34,6 +35,34 @@ export interface ResultRow {
    * Models differ: the Gemini 2.5 family emits thoughts, 3.5 does not.
    */
   thoughts?: string;
+  /**
+   * The documents the answer cited, one `title — uri` per line.
+   *
+   * This and the other trace columns below share the `thoughts` contract: they
+   * are always set, empty rather than absent, so the CSV export keeps the
+   * column even when the first row cited nothing.
+   */
+  citedSources?: string;
+  /** Distinct data stores behind the cited documents, comma separated. */
+  citedDataStores?: string;
+  /** Distinct connectors behind the cited documents, comma separated. */
+  citedConnectors?: string;
+  /** Tools the agent ran and their outcomes, one per line. */
+  toolCalls?: string;
+  /** Highest grounding score across the cited sources; 0 when ungrounded. */
+  maxGroundingScore?: number;
+  /**
+   * The structured evidence behind the columns above, including the verbatim
+   * stream. Powers the trace inspector and the JSONL export, and is stripped
+   * before the rows reach the CSV export.
+   */
+  trace?: AssistTrace;
+  /**
+   * The row's `expected_sources` from the input CSV, echoed here so that
+   * re-rating — which has no access to the uploaded file — can still run the
+   * source attribution scorer.
+   */
+  expectedSources?: string;
   /** Time to First Token in seconds (s). */
   ttft: number;
   /** Time to First Answer Token in seconds (s). */

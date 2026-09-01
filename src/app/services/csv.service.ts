@@ -56,8 +56,40 @@ export class CsvService {
    * @param filename The name of the file to create.
    */
   exportCSV(data: Array<object>, filename: string) {
-    const csv = Papa.unparse(data);
-    const blob = new Blob([csv], {type: 'application/octet-stream'});
+    // Excel and most spreadsheet apps decode a CSV in the system locale unless
+    // it opens with a UTF-8 byte order mark. Without it every em dash and
+    // emoji the agent produced -- and every citation, which joins its title
+    // and uri with one -- arrives as mojibake.
+    this.download(
+        `\uFEFF${Papa.unparse(data)}`, filename, 'text/csv;charset=utf-8');
+  }
+
+  /**
+   * Exports data as newline-delimited JSON, one object per line.
+   *
+   * Used for evidence too nested to survive a spreadsheet cell, such as the
+   * verbatim assist stream behind each row: a reader can stream the file
+   * record by record instead of parsing one enormous array.
+   * @param data The objects to export, one per line.
+   * @param filename The name of the file to create.
+   */
+  exportJSONL(data: Array<object>, filename: string) {
+    // Deliberately no byte order mark: a parser reading the file line by line
+    // would take one as part of the first record and fail to parse it.
+    const jsonl = data.map(entry => JSON.stringify(entry)).join('\n');
+    this.download(jsonl, filename, 'application/x-ndjson;charset=utf-8');
+  }
+
+  /**
+   * Prompts the browser to save text as a file.
+   * @param content The file's contents.
+   * @param filename The name of the file to create.
+   * @param type The blob's MIME type.
+   */
+  private download(
+      content: string, filename: string,
+      type = 'application/octet-stream') {
+    const blob = new Blob([content], {type});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

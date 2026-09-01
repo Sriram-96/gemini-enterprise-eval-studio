@@ -115,9 +115,14 @@ describe('ScorerRegistry', () => {
           .toBeNull();
     });
 
-    it('should default to a selection holding the default scorer', () => {
-      expect(registry.defaultIds).toEqual([registry.defaultId]);
+    it('should default to a selection holding every registered scorer', () => {
+      expect(registry.defaultIds).toEqual(registry.list().map(s => s.id));
     });
+
+    it('should lead the default selection with the default scorer, so it stays primary',
+       () => {
+         expect(registry.defaultIds[0]).toBe(registry.defaultId);
+       });
   });
 
   describe('resolveAll', () => {
