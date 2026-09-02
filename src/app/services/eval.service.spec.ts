@@ -20,7 +20,7 @@ import {AppConfig} from '../models/app-config.model';
 import {ScoreResult, Scorer, ScoringRequest, summarizeScorerResults} from '../scoring/scorer';
 import {SCORERS} from '../scoring/scorer.registry';
 import {AUTO_RATER_SCORER_ID} from '../scoring/scorers/auto-rater.scorer';
-import {ROUGE_L_SCORER_ID} from '../scoring/scorers/rouge-l.scorer';
+import {DETERMINISTIC_SCORER_ID} from '../scoring/scorers/deterministic.scorer';
 import {MockEvalBackendService} from '../testing/mocks';
 
 import {EvalBackendService} from './eval-backend.service';
@@ -213,7 +213,7 @@ describe('EvalService', () => {
 
     const BOTH = {
       ...CONFIG,
-      selectedScorers: [AUTO_RATER_SCORER_ID, ROUGE_L_SCORER_ID]
+      selectedScorers: [AUTO_RATER_SCORER_ID, DETERMINISTIC_SCORER_ID]
     };
 
     it('should run both scorers with the auto rater as primary', async () => {
@@ -228,7 +228,7 @@ describe('EvalService', () => {
       });
 
       expect(results.map(result => result.scorerId)).toEqual([
-        AUTO_RATER_SCORER_ID, ROUGE_L_SCORER_ID
+        AUTO_RATER_SCORER_ID, DETERMINISTIC_SCORER_ID
       ]);
       expect(results[0].score).toBe(0.9);
       expect(results[1].score).toBeCloseTo(0.667, 3);
@@ -236,38 +236,40 @@ describe('EvalService', () => {
           .toBe(AUTO_RATER_SCORER_ID);
     });
 
-    it('should score with ROUGE-L without calling the backend', async () => {
-      const service = setUp();
+    it('should score deterministically without calling the backend',
+       async () => {
+         const service = setUp();
 
-      const results = await service.scoreAll({
-        query: 'q',
-        response: 'hello world',
-        golden: 'hello world',
-        config: {...CONFIG, selectedScorers: [ROUGE_L_SCORER_ID]}
-      });
+         const results = await service.scoreAll({
+           query: 'q',
+           response: 'hello world',
+           golden: 'hello world',
+           config: {...CONFIG, selectedScorers: [DETERMINISTIC_SCORER_ID]}
+         });
 
-      expect(results.map(result => result.scorerId)).toEqual([
-        ROUGE_L_SCORER_ID
-      ]);
-      expect(results[0].score).toBe(1);
-      expect(mockBackendService.callScoreSpy.calls.count()).toBe(0);
-    });
+         expect(results.map(result => result.scorerId)).toEqual([
+           DETERMINISTIC_SCORER_ID
+         ]);
+         expect(results[0].score).toBe(1);
+         expect(mockBackendService.callScoreSpy.calls.count()).toBe(0);
+       });
 
-    it('should keep ROUGE-L scoring when the auto rater fails', async () => {
-      const service = setUp();
-      mockBackendService.callScoreSpy.and.returnValue(
-          Promise.reject(new Error('rater is down')));
+    it('should keep the deterministic scorer running when the auto rater fails',
+       async () => {
+         const service = setUp();
+         mockBackendService.callScoreSpy.and.returnValue(
+             Promise.reject(new Error('rater is down')));
 
-      const results = await service.scoreAll({
-        query: 'q',
-        response: 'the capital of france is paris',
-        golden: 'paris is the capital of france',
-        config: BOTH
-      });
+         const results = await service.scoreAll({
+           query: 'q',
+           response: 'the capital of france is paris',
+           golden: 'paris is the capital of france',
+           config: BOTH
+         });
 
-      expect(results[0].error).toBe('rater is down');
-      expect(results[1].score).toBeCloseTo(0.667, 3);
-    });
+         expect(results[0].error).toBe('rater is down');
+         expect(results[1].score).toBeCloseTo(0.667, 3);
+       });
 
     it('should skip both scorers for a row with no golden answer', async () => {
       const service = setUp();

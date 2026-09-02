@@ -18,8 +18,8 @@ import {Injectable} from '@angular/core';
 
 import {ScoreResult, Scorer, ScoringRequest} from '../scorer';
 
-/** Identifier of the ROUGE-L lexical overlap scorer. */
-export const ROUGE_L_SCORER_ID = 'rouge-l';
+/** Identifier of the deterministic lexical overlap scorer. */
+export const DETERMINISTIC_SCORER_ID = 'deterministic';
 
 /**
  * Longest token sequence either side is compared over. The LCS dynamic program
@@ -86,7 +86,7 @@ export function lcsLength(a: readonly string[], b: readonly string[]): number {
 
 /**
  * Scores a response by the longest common subsequence it shares with the
- * golden answer, as the ROUGE-L F1 measure.
+ * golden answer, as an F1 measure. The measure is ROUGE-L.
  *
  * Deterministic and offline: the same pair of strings always produces the same
  * number, on every machine and in any order relative to other comparisons.
@@ -98,9 +98,9 @@ export function lcsLength(a: readonly string[], b: readonly string[]): number {
  * substitute for it.
  */
 @Injectable({providedIn: 'root'})
-export class RougeLScorer extends Scorer {
-  readonly id = ROUGE_L_SCORER_ID;
-  readonly displayName = 'ROUGE-L';
+export class DeterministicScorer extends Scorer {
+  readonly id = DETERMINISTIC_SCORER_ID;
+  readonly displayName = 'Deterministic';
   override readonly description =
       'Measures the longest shared word sequence between the fetched and golden responses. Deterministic and offline, but lexical only: synonyms and typos score low.';
   override readonly requiresGolden = true;

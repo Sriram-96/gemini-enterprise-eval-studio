@@ -15,12 +15,12 @@ normalized score between `0.0` and `1.0`.
 | Id | Name | Notes |
 | --- | --- | --- |
 | `auto-rater` | Auto Rater (LLM as a judge) | Asks a Gemini model to rate the response against the golden answer using your rubric. Understands meaning; costs a backend call per row and is not reproducible. Needs a `golden` column. |
-| `rouge-l` | ROUGE-L | Longest common subsequence of the tokenized golden answer and response, as an F1 measure. Offline, free and bit-deterministic; lexical only, so synonyms and typos score low. Needs a `golden` column. |
+| `deterministic` | Deterministic | Longest common subsequence of the tokenized golden answer and response, as an F1 measure (ROUGE-L). Offline, free and bit-deterministic; lexical only, so synonyms and typos score low. Needs a `golden` column. |
 | `source-attribution` | Source Attribution | Judges where the answer came from rather than what it said: whether the agent cited the documents it was supposed to. Offline and deterministic. Needs an `expected_sources` column. |
 
 They complement each other, which is the point of running several: the auto
-rater handles semantics, ROUGE-L provides a reproducible lexical floor, and
-source attribution checks the grounding neither of them can see.
+rater handles semantics, `deterministic` provides a reproducible lexical floor,
+and source attribution checks the grounding neither of them can see.
 
 ### `source-attribution`
 
@@ -91,7 +91,7 @@ answer.
    ```ts
    factory: () => [
      inject(AutoRaterScorer),
-     inject(RougeLScorer),
+     inject(DeterministicScorer),
      inject(SourceAttributionScorer),
      inject(ExactMatchScorer),
    ],
@@ -119,7 +119,7 @@ Override these on your scorer when the defaults do not fit:
   the current configuration; the wizard blocks the **Next** button while any
   selected scorer returns one.
 - `ScoreResult.details` — attach a rationale or per-criterion sub-scores.
-  ROUGE-L uses this to expose its recall, precision and LCS length.
+  `deterministic` uses this to expose its recall, precision and LCS length.
 - `ScoreResult.skipped` — return it when the row gave the scorer nothing to
   judge, so it is recorded as a skip rather than as a zero that would drag an
   average down. Use this for inputs `requiresGolden` cannot express.

@@ -187,7 +187,10 @@ the CSV still matches the same one in the JSONL and the two files can be read
 side by side.
 
 All three registered scorers ran, so every row carries a `score_auto-rater`, a
-`score_rouge-l` and a `score_source-attribution` column.
+lexical-overlap and a `score_source-attribution` column. The capture predates
+the rename of that scorer, so its column is still headed `score_rouge-l`; a
+run made today writes `score_deterministic` instead. The file will pick the new
+header up when it is next refreshed from a real run.
 
 **Read them for the failures, not the passes.** That run scored 23 rows at 1.0,
 4 at 0.0 and skipped 2, and the three interesting groups are:
@@ -209,11 +212,12 @@ All three registered scorers ran, so every row carries a `score_auto-rater`, a
   what the rows are there to check: the agent says the document is not
   indexed instead of inventing a policy.
 
-Watch the auto-rater and ROUGE-L columns diverge across the whole file. The
-auto rater never drops below 0.85 while ROUGE-L averages 0.12, because the
-goldens are one-line facts and the agent answers in several formatted
-paragraphs that happen to contain them. ROUGE-L is a lexical floor here, not a
-verdict — a reminder to read a scorer against what it actually measures.
+Watch the auto-rater and the lexical-overlap columns diverge across the whole
+file. The auto rater never drops below 0.85 while the deterministic scorer
+averages 0.12, because the goldens are one-line facts and the agent answers in
+several formatted paragraphs that happen to contain them. It is a lexical floor
+here, not a verdict — a reminder to read a scorer against what it actually
+measures.
 
 Two things the capture shows about the tooling itself:
 

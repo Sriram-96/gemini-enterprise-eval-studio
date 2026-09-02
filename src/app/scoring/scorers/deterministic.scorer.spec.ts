@@ -18,7 +18,7 @@ import {TestBed} from '@angular/core/testing';
 
 import {AppConfig} from '../../models/app-config.model';
 
-import {MAX_TOKENS, ROUGE_L_SCORER_ID, RougeLScorer} from './rouge-l.scorer';
+import {DETERMINISTIC_SCORER_ID, DeterministicScorer, MAX_TOKENS} from './deterministic.scorer';
 
 const CONFIG: AppConfig = {
   projectId: 'project',
@@ -40,12 +40,12 @@ const TERSE_GOLDEN = 'the capital city of france is paris which is also the ' +
 const VERBOSE_RESPONSE =
     'well, the answer to your question is that the capital city here is paris';
 
-describe('RougeLScorer', () => {
-  let scorer: RougeLScorer;
+describe('DeterministicScorer', () => {
+  let scorer: DeterministicScorer;
 
   beforeEach(() => {
     TestBed.configureTestingModule({});
-    scorer = TestBed.inject(RougeLScorer);
+    scorer = TestBed.inject(DeterministicScorer);
   });
 
   /** Scores a golden/response pair and returns the F1 score alone. */
@@ -65,8 +65,8 @@ describe('RougeLScorer', () => {
 
   describe('scorer surface', () => {
     it('should expose a stable id and display name', () => {
-      expect(scorer.id).toBe(ROUGE_L_SCORER_ID);
-      expect(scorer.displayName).toBe('ROUGE-L');
+      expect(scorer.id).toBe(DETERMINISTIC_SCORER_ID);
+      expect(scorer.displayName).toBe('Deterministic');
     });
 
     it('should require a golden answer', () => {
@@ -130,9 +130,9 @@ describe('RougeLScorer', () => {
           .toBeCloseTo(0.6, 3);
     });
 
-    // This is the property the whole choice of ROUGE-L rests on: a sentence
-    // whose meaning was inverted must rank below a genuine rewording of the
-    // same fact. Bag-of-words and character-positional metrics get this
+    // This is the property the whole choice of an LCS measure rests on: a
+    // sentence whose meaning was inverted must rank below a genuine rewording
+    // of the same fact. Bag-of-words and character-positional metrics get this
     // backwards.
     it('should rank a meaning reversal below a legitimate reordering',
        async () => {
@@ -218,7 +218,7 @@ describe('RougeLScorer', () => {
         config: CONFIG
       };
       const reused = await scorer.score(request);
-      const fresh = await new RougeLScorer().score(request);
+      const fresh = await new DeterministicScorer().score(request);
 
       expect(fresh.score).toBe(reused.score);
       expect(fresh.details).toEqual(reused.details);
