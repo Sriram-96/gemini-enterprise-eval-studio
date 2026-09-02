@@ -112,7 +112,7 @@ describe('DeterministicScorer', () => {
       expect(await score(
                  'paris is the capital of france',
                  'the capital of france is paris'))
-          .toBeCloseTo(0.667, 3);
+          .toBe(0.67);
     });
 
     it('should heavily penalize a full reversal of a long sentence',
@@ -120,7 +120,7 @@ describe('DeterministicScorer', () => {
          expect(await score(
                     'machine learning model was trained successfully',
                     'successfully trained was model learning machine'))
-             .toBeCloseTo(0.167, 3);
+             .toBe(0.17);
        });
   });
 
@@ -171,7 +171,7 @@ describe('DeterministicScorer', () => {
 
     it('should treat a spelled out number as a different token', async () => {
       expect(await score('95% accuracy rate', '95 percent accuracy'))
-          .toBeCloseTo(0.667, 3);
+          .toBe(0.67);
     });
   });
 
@@ -179,13 +179,51 @@ describe('DeterministicScorer', () => {
     it('should penalize a terse but correct answer through recall',
        async () => {
          expect(await score(TERSE_GOLDEN, 'paris is the capital of france'))
-             .toBeCloseTo(0.364, 3);
+             .toBe(0.36);
        });
 
     it('should penalize a verbose but correct answer through precision',
        async () => {
-         expect(await score('paris', VERBOSE_RESPONSE)).toBeCloseTo(0.133, 3);
+         expect(await score('paris', VERBOSE_RESPONSE)).toBe(0.13);
        });
+  });
+
+  describe('rounding', () => {
+    it('should report no more than two decimal places', async () => {
+      const pairs: Array<[string, string]> = [
+        ['paris is the capital of france', 'the capital of france is paris'],
+        ['machine learning model was trained successfully',
+         'successfully trained was model learning machine'],
+        ['the dog bit the man', 'the man bit the dog'],
+        [TERSE_GOLDEN, 'paris is the capital of france'],
+        ['paris', VERBOSE_RESPONSE],
+        ['the model achieved 95% accuracy', 'the model reached 95% accuracy'],
+      ];
+
+      for (const [golden, response] of pairs) {
+        const value = await score(golden, response);
+
+        // A float cannot hold 0.67 exactly, so the check is that scaling by
+        // 100 lands on a whole number rather than that it equals one.
+        expect(value * 100).toBeCloseTo(Math.round(value * 100), 9);
+      }
+    });
+
+    it('should round a half upward', async () => {
+      // F1 reduces to 2 * lcs / (goldenTokens + responseTokens), so one shared
+      // token across sixteen is exactly 0.125 — the tie that separates
+      // rounding half up from half down.
+      const response = `${VERBOSE_RESPONSE} today`;
+
+      expect((await detailsOf('paris', response))['responseTokens']).toBe(15);
+      expect(await score('paris', response)).toBe(0.13);
+    });
+
+    it('should keep an exact score exact', async () => {
+      expect(await score('hello world', 'hello world')).toBe(1);
+      expect(await score('hello world', 'world hello')).toBe(0.5);
+      expect(await score('paris', 'london')).toBe(0);
+    });
   });
 
   describe('determinism', () => {
@@ -355,9 +393,10 @@ describe('DeterministicScorer', () => {
          });
          const recall = result.details!['recall'] as number;
          const precision = result.details!['precision'] as number;
+         const f1 = 2 * recall * precision / (recall + precision);
 
-         expect(result.score)
-             .toBeCloseTo(2 * recall * precision / (recall + precision), 10);
+         // The score is the rounded F1 of the details, which stay exact.
+         expect(result.score).toBe(Math.round(f1 * 100) / 100);
        });
 
     it('should report zeroed details for an empty comparison', async () => {

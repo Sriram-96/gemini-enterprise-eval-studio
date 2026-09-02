@@ -231,7 +231,7 @@ describe('EvalService', () => {
         AUTO_RATER_SCORER_ID, DETERMINISTIC_SCORER_ID
       ]);
       expect(results[0].score).toBe(0.9);
-      expect(results[1].score).toBeCloseTo(0.667, 3);
+      expect(results[1].score).toBe(0.67);
       expect(summarizeScorerResults(results).scorerId)
           .toBe(AUTO_RATER_SCORER_ID);
     });
@@ -268,7 +268,7 @@ describe('EvalService', () => {
          });
 
          expect(results[0].error).toBe('rater is down');
-         expect(results[1].score).toBeCloseTo(0.667, 3);
+         expect(results[1].score).toBe(0.67);
        });
 
     it('should skip both scorers for a row with no golden answer', async () => {

@@ -30,6 +30,21 @@ export const DETERMINISTIC_SCORER_ID = 'deterministic';
 export const MAX_TOKENS = 2000;
 
 /**
+ * Rounds a score to two decimal places, halves upward.
+ *
+ * The raw F1 is a ratio of token counts, so it arrives with as many digits as
+ * a float can hold (`0.36363636363636365`). Two places is all a tester reads
+ * off the results table or the exported CSV, and it is what the latency
+ * columns already report.
+ *
+ * @param value The raw score.
+ * @returns The score rounded to two decimal places.
+ */
+function roundScore(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
  * Splits text into comparable tokens.
  *
  * Decomposing to NFD and dropping the combining marks is what makes `café` and
@@ -89,7 +104,9 @@ export function lcsLength(a: readonly string[], b: readonly string[]): number {
  * golden answer, as an F1 measure. The measure is ROUGE-L.
  *
  * Deterministic and offline: the same pair of strings always produces the same
- * number, on every machine and in any order relative to other comparisons.
+ * number, on every machine and in any order relative to other comparisons. The
+ * score is reported to two decimal places; `details` keeps the exact ratios it
+ * was derived from.
  *
  * It measures lexical overlap only and has no notion of meaning. A typo makes
  * a wholly different token (`john smith` against `jon smyth` scores 0.0), a
@@ -135,8 +152,11 @@ export class DeterministicScorer extends Scorer {
         0 :
         (2 * recall * precision) / (recall + precision);
 
+    // Only the reported score is rounded. `recall` and `precision` stay at
+    // full precision: they are diagnostics, and a reader working out where a
+    // score came from wants the exact ratios.
     return {
-      score,
+      score: roundScore(score),
       details: {...details, recall, precision, lcsLength: lcs}
     };
   }
