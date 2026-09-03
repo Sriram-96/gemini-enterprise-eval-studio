@@ -188,18 +188,30 @@ the CSV still matches the same one in the JSONL and the two files can be read
 side by side.
 
 All three registered scorers ran, so every row carries a `score_auto-rater`, a
-`score_rouge-l` and a `score_source-attribution` column.
+`score_deterministic` and a `score_source-attribution` column. Web grounding
+was off, so every citation in the capture comes from the indexed corpus.
 
-**Read them for the failures, not the passes.** That run scored 23 rows at 1.0,
-4 at 0.0 and skipped 2, and the three interesting groups are:
+**Read them for the failures, not the passes.** That run scored 22 rows at 1.0,
+5 at 0.0 and skipped 2, and the four interesting groups are:
 
-- **Source drift, caught.** `conv-incident` t2, `conv-perdiem` t3,
-  `conv-pricing` t2 and `conv-coverage` t2 all cite nothing and score 0. Every
-  one of their answers was already present verbatim in the previous turn's
-  output, and every follow-up that needed genuinely new information did
-  re-ground. The agent re-retrieves only when it must. All four score 0.95 on
-  the auto-rater: **answer quality alone reads them as passes**, which is the
-  entire reason attribution exists as a separate metric.
+- **Source drift, caught.** `conv-incident` t2, `conv-oncall` t2,
+  `conv-pricing` t2 and `conv-pricing` t3 all cite nothing and score 0. Every
+  one of their answers was already present in an earlier turn's output —
+  `conv-pricing` t3 reaches back two turns, to a floor price t1 volunteered
+  unprompted — and every follow-up that needed genuinely new information
+  re-grounded, bar the one in the next group. The agent re-retrieves only when
+  it must. All four score 0.9 or better on the auto-rater: **answer quality
+  alone reads them as passes**, which is the entire reason attribution exists
+  as a separate metric.
+- **A confabulation, where the two scorers agree instead of diverging.**
+  `conv-incident` t4 (`When is their next security review due?`) also cites
+  nothing, but unlike the drift rows it is *wrong*: it invents a February 2025
+  review date, adds the 12-month cadence and answers February 2026, against a
+  golden of 28 May 2027. Attribution, the auto-rater and the deterministic
+  scorer all score it 0. That agreement is the signature worth learning —
+  attribution at 0 with a high auto-rater means the agent stopped citing, while
+  **both at 0 means it stopped retrieving**, and the second failure is the one
+  that reaches the user as a confident wrong answer.
 - **The version trap, held.** The pre-approval row cites v7 and v6 together and
   uses v6 only for the "previously $1,800" aside. `conv-perdiem` t4 — the
   hardest row here, needing the superseded document to answer "has that rate
@@ -210,11 +222,12 @@ All three registered scorers ran, so every row carries a `score_auto-rater`, a
   what the rows are there to check: the agent says the document is not
   indexed instead of inventing a policy.
 
-Watch the auto-rater and ROUGE-L columns diverge across the whole file. The
-auto rater never drops below 0.85 while ROUGE-L averages 0.12, because the
-goldens are one-line facts and the agent answers in several formatted
-paragraphs that happen to contain them. ROUGE-L is a lexical floor here, not a
-verdict — a reminder to read a scorer against what it actually measures.
+Watch the auto-rater and the deterministic columns diverge across the whole
+file. Setting the confabulated row aside, the auto rater never drops below 0.9
+while the deterministic scorer averages 0.23 and puts only two rows above 0.5,
+because the goldens are one-line facts and the agent answers in several
+formatted paragraphs that happen to contain them. It is a lexical floor here,
+not a verdict — a reminder to read a scorer against what it actually measures.
 
 Two things the capture shows about the tooling itself:
 

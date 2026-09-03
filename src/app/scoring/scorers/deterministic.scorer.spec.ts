@@ -18,7 +18,7 @@ import {TestBed} from '@angular/core/testing';
 
 import {AppConfig} from '../../models/app-config.model';
 
-import {MAX_TOKENS, ROUGE_L_SCORER_ID, RougeLScorer} from './rouge-l.scorer';
+import {DETERMINISTIC_SCORER_ID, DeterministicScorer, MAX_TOKENS} from './deterministic.scorer';
 
 const CONFIG: AppConfig = {
   projectId: 'project',
@@ -40,12 +40,12 @@ const TERSE_GOLDEN = 'the capital city of france is paris which is also the ' +
 const VERBOSE_RESPONSE =
     'well, the answer to your question is that the capital city here is paris';
 
-describe('RougeLScorer', () => {
-  let scorer: RougeLScorer;
+describe('DeterministicScorer', () => {
+  let scorer: DeterministicScorer;
 
   beforeEach(() => {
     TestBed.configureTestingModule({});
-    scorer = TestBed.inject(RougeLScorer);
+    scorer = TestBed.inject(DeterministicScorer);
   });
 
   /** Scores a golden/response pair and returns the F1 score alone. */
@@ -65,8 +65,8 @@ describe('RougeLScorer', () => {
 
   describe('scorer surface', () => {
     it('should expose a stable id and display name', () => {
-      expect(scorer.id).toBe(ROUGE_L_SCORER_ID);
-      expect(scorer.displayName).toBe('ROUGE-L');
+      expect(scorer.id).toBe(DETERMINISTIC_SCORER_ID);
+      expect(scorer.displayName).toBe('Deterministic');
     });
 
     it('should require a golden answer', () => {
@@ -112,7 +112,7 @@ describe('RougeLScorer', () => {
       expect(await score(
                  'paris is the capital of france',
                  'the capital of france is paris'))
-          .toBeCloseTo(0.667, 3);
+          .toBe(0.67);
     });
 
     it('should heavily penalize a full reversal of a long sentence',
@@ -120,7 +120,7 @@ describe('RougeLScorer', () => {
          expect(await score(
                     'machine learning model was trained successfully',
                     'successfully trained was model learning machine'))
-             .toBeCloseTo(0.167, 3);
+             .toBe(0.17);
        });
   });
 
@@ -130,9 +130,9 @@ describe('RougeLScorer', () => {
           .toBeCloseTo(0.6, 3);
     });
 
-    // This is the property the whole choice of ROUGE-L rests on: a sentence
-    // whose meaning was inverted must rank below a genuine rewording of the
-    // same fact. Bag-of-words and character-positional metrics get this
+    // This is the property the whole choice of an LCS measure rests on: a
+    // sentence whose meaning was inverted must rank below a genuine rewording
+    // of the same fact. Bag-of-words and character-positional metrics get this
     // backwards.
     it('should rank a meaning reversal below a legitimate reordering',
        async () => {
@@ -171,7 +171,7 @@ describe('RougeLScorer', () => {
 
     it('should treat a spelled out number as a different token', async () => {
       expect(await score('95% accuracy rate', '95 percent accuracy'))
-          .toBeCloseTo(0.667, 3);
+          .toBe(0.67);
     });
   });
 
@@ -179,13 +179,51 @@ describe('RougeLScorer', () => {
     it('should penalize a terse but correct answer through recall',
        async () => {
          expect(await score(TERSE_GOLDEN, 'paris is the capital of france'))
-             .toBeCloseTo(0.364, 3);
+             .toBe(0.36);
        });
 
     it('should penalize a verbose but correct answer through precision',
        async () => {
-         expect(await score('paris', VERBOSE_RESPONSE)).toBeCloseTo(0.133, 3);
+         expect(await score('paris', VERBOSE_RESPONSE)).toBe(0.13);
        });
+  });
+
+  describe('rounding', () => {
+    it('should report no more than two decimal places', async () => {
+      const pairs: Array<[string, string]> = [
+        ['paris is the capital of france', 'the capital of france is paris'],
+        ['machine learning model was trained successfully',
+         'successfully trained was model learning machine'],
+        ['the dog bit the man', 'the man bit the dog'],
+        [TERSE_GOLDEN, 'paris is the capital of france'],
+        ['paris', VERBOSE_RESPONSE],
+        ['the model achieved 95% accuracy', 'the model reached 95% accuracy'],
+      ];
+
+      for (const [golden, response] of pairs) {
+        const value = await score(golden, response);
+
+        // A float cannot hold 0.67 exactly, so the check is that scaling by
+        // 100 lands on a whole number rather than that it equals one.
+        expect(value * 100).toBeCloseTo(Math.round(value * 100), 9);
+      }
+    });
+
+    it('should round a half upward', async () => {
+      // F1 reduces to 2 * lcs / (goldenTokens + responseTokens), so one shared
+      // token across sixteen is exactly 0.125 — the tie that separates
+      // rounding half up from half down.
+      const response = `${VERBOSE_RESPONSE} today`;
+
+      expect((await detailsOf('paris', response))['responseTokens']).toBe(15);
+      expect(await score('paris', response)).toBe(0.13);
+    });
+
+    it('should keep an exact score exact', async () => {
+      expect(await score('hello world', 'hello world')).toBe(1);
+      expect(await score('hello world', 'world hello')).toBe(0.5);
+      expect(await score('paris', 'london')).toBe(0);
+    });
   });
 
   describe('determinism', () => {
@@ -218,7 +256,7 @@ describe('RougeLScorer', () => {
         config: CONFIG
       };
       const reused = await scorer.score(request);
-      const fresh = await new RougeLScorer().score(request);
+      const fresh = await new DeterministicScorer().score(request);
 
       expect(fresh.score).toBe(reused.score);
       expect(fresh.details).toEqual(reused.details);
@@ -355,9 +393,10 @@ describe('RougeLScorer', () => {
          });
          const recall = result.details!['recall'] as number;
          const precision = result.details!['precision'] as number;
+         const f1 = 2 * recall * precision / (recall + precision);
 
-         expect(result.score)
-             .toBeCloseTo(2 * recall * precision / (recall + precision), 10);
+         // The score is the rounded F1 of the details, which stay exact.
+         expect(result.score).toBe(Math.round(f1 * 100) / 100);
        });
 
     it('should report zeroed details for an empty comparison', async () => {

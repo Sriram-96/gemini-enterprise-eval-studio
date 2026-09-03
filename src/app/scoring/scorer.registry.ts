@@ -18,7 +18,7 @@ import {Inject, Injectable, InjectionToken, inject} from '@angular/core';
 
 import {Scorer} from './scorer';
 import {AutoRaterScorer} from './scorers/auto-rater.scorer';
-import {RougeLScorer} from './scorers/rouge-l.scorer';
+import {DeterministicScorer} from './scorers/deterministic.scorer';
 import {SourceAttributionScorer} from './scorers/source-attribution.scorer';
 
 /**
@@ -33,7 +33,7 @@ export const SCORERS = new InjectionToken<readonly Scorer[]>('app.scorers', {
   providedIn: 'root',
   factory: () => [
     inject(AutoRaterScorer),
-    inject(RougeLScorer),
+    inject(DeterministicScorer),
     inject(SourceAttributionScorer),
   ],
 });
