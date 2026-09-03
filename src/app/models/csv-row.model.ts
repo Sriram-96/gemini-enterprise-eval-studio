@@ -32,5 +32,17 @@ export interface CSVRow {
    * original CSV order.
    */
   turn?: string;
+  /**
+   * Optional. The custom agent that should serve this row, given as the bare
+   * agent id -- the last segment of
+   * `projects/{p}/locations/{l}/collections/{c}/engines/{e}/assistants/{a}/agents/{agent}`
+   * -- and not the full resource name. Empty or absent sends the row to the
+   * engine's default assistant, as before.
+   *
+   * Every row of one conversation_id must name the same agent: the turns share
+   * a single Assistant session, and switching the serving agent part-way
+   * through one is not a defined operation.
+   */
+  agent?: string;
   [key: string]: string|undefined;
 }

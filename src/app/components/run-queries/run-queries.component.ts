@@ -17,6 +17,7 @@
 import {CommonModule} from '@angular/common';
 import {ChangeDetectorRef, Component} from '@angular/core';
 
+import {validateAgentColumn} from '../../models/csv-row.util';
 import {CsvService} from '../../services/csv.service';
 import {EvalService} from '../../services/eval.service';
 import {StateService} from '../../services/state.service';
@@ -49,10 +50,12 @@ export class RunQueriesComponent {
       type: 'markdown',
       truncate: true
     },
+    {header: 'Agent', key: 'agentId', truncate: true},
     {header: 'TTFT (s)', key: 'ttft', type: 'number'},
     {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
     {header: 'TTLT (s)', key: 'ttlt', type: 'number'}
   ];
+  errorMessage: string|null = null;
   responseFile: File|null = null;
   responseCsvRows: Array<Record<string, string>> = [];
   responseResults: any[] = [];
@@ -109,6 +112,15 @@ export class RunQueriesComponent {
   }
 
   startResponseGeneration(event: {file: File, rows: any[]}) {
+    // Checked before anything is sent, so a bad `agent` column costs the user
+    // a message rather than a run of failed rows.
+    const agentError = validateAgentColumn(event.rows);
+    if (agentError) {
+      this.errorMessage = agentError;
+      this.cdr.detectChanges();
+      return;
+    }
+    this.errorMessage = null;
     this.responseFile = event.file;
     this.responseCsvRows = event.rows;
     this.runResponseGeneration();
@@ -131,7 +143,7 @@ export class RunQueriesComponent {
     const tasks = this.responseCsvRows.map(row => async () => {
       if (runId !== this.currentRunId || !this.isProcessingResponse) return;
 
-      const csvRow: any = {query: row['query']};
+      const csvRow: any = {query: row['query'], agent: row['agent']};
       const result = await this.evalService.processRow(csvRow);
       if (runId !== this.currentRunId || !this.isProcessingResponse) return;
 
@@ -142,6 +154,7 @@ export class RunQueriesComponent {
           ttft: result.ttft,
           ttfa: result.ttfa,
           ttlt: result.ttlt,
+          agentId: result.agentId,
           assistToken: result.assistToken,
           projectId: result.projectId,
           region: result.region,

@@ -364,6 +364,151 @@ describe('RunEvaluationComponent', () => {
        expect(startedBeforeFinished['b2']).toContain('b1');
      }));
 
+  describe('agent column', () => {
+    /** Answers every row, echoing back the agent it was asked to use. */
+    function echoAgent() {
+      mockEvalService.processRow.and.callFake(async (row) => ({
+                                                query: row.query,
+                                                golden: row.golden,
+                                                fetched: `fetched-${row.query}`,
+                                                ttft: 10,
+                                                ttfa: 20,
+                                                ttlt: 30,
+                                                score: 0.9,
+                                                agentId: row.agent ?? ''
+                                              }));
+    }
+
+    it('should pass each row\'s agent through to the evaluation', fakeAsync(() => {
+      const fixture = TestBed.createComponent(RunEvaluationComponent);
+      const component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      const agents: Array<string|undefined> = [];
+      mockEvalService.processRow.and.callFake(async (row) => {
+        agents.push(row.agent);
+        return {
+          query: row.query,
+          golden: row.golden,
+          fetched: `fetched-${row.query}`,
+          ttft: 10,
+          ttfa: 20,
+          ttlt: 30,
+          score: 0.9,
+          agentId: row.agent ?? ''
+        };
+      });
+
+      // One upload mixing the engine's default assistant with a custom agent
+      // is the whole point of putting the agent on the row.
+      component.startEvaluation({
+        file: new File([], 'test.csv'),
+        rows: [
+          {query: 'q1', golden: 'g1'},
+          {query: 'q2', golden: 'g2', agent: 'dc-triage'},
+        ]
+      });
+      tick();
+
+      expect(agents).toEqual([undefined, 'dc-triage']);
+      expect(resultsSubject.value.map(row => row.agentId)).toEqual([
+        '', 'dc-triage'
+      ]);
+    }));
+
+    it('should show the agent in the results table and its export',
+       fakeAsync(() => {
+         const fixture = TestBed.createComponent(RunEvaluationComponent);
+         const component = fixture.componentInstance;
+         fixture.detectChanges();
+         echoAgent();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'q1', golden: 'g1', agent: 'dc-triage'}]
+         });
+         tick();
+
+         expect(component.columns.some(column => column.key === 'agentId'))
+             .toBeTrue();
+         // displayResults is what both the table and the CSV export read.
+         expect(component.displayResults[0]['agentId']).toBe('dc-triage');
+       }));
+
+    it('should refuse a conversation whose turns name different agents',
+       fakeAsync(() => {
+         // The turns share one Assistant session; swapping the serving agent
+         // part-way through it is not a defined operation, so this is caught
+         // before any row is sent rather than producing a run nobody can read.
+         const fixture = TestBed.createComponent(RunEvaluationComponent);
+         const component = fixture.componentInstance;
+         fixture.detectChanges();
+         echoAgent();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 't1', golden: 'g', conversation_id: 'conv-a', turn: '1',
+              agent: 'dc-triage'},
+             {query: 't2', golden: 'g', conversation_id: 'conv-a', turn: '2',
+              agent: 'other-agent'},
+           ]
+         });
+         tick();
+
+         expect(mockEvalService.processRow).not.toHaveBeenCalled();
+         expect(component.errorMessage).toContain('conv-a');
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should refuse a malformed agent id before running anything',
+       fakeAsync(() => {
+         const fixture = TestBed.createComponent(RunEvaluationComponent);
+         const component = fixture.componentInstance;
+         fixture.detectChanges();
+         echoAgent();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{
+             query: 'q1',
+             golden: 'g1',
+             agent: 'projects/p/locations/global/collections/default_collection/engines/e/assistants/default_assistant/agents/dc-triage'
+           }]
+         });
+         tick();
+
+         expect(mockEvalService.processRow).not.toHaveBeenCalled();
+         expect(component.errorMessage).toContain('dc-triage');
+       }));
+
+    it('should keep results from an earlier run when a later upload is refused',
+       fakeAsync(() => {
+         // Clearing the table for input that was never sent would throw away
+         // a good run for a typo.
+         const fixture = TestBed.createComponent(RunEvaluationComponent);
+         const component = fixture.componentInstance;
+         fixture.detectChanges();
+         echoAgent();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'q1', golden: 'g1', agent: 'dc-triage'}]
+         });
+         tick();
+         expect(resultsSubject.value.length).toBe(1);
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'q2', golden: 'g2', agent: 'Not An Id'}]
+         });
+         tick();
+
+         expect(resultsSubject.value.length).toBe(1);
+         expect(resultsSubject.value[0].query).toBe('q1');
+       }));
+  });
+
   describe('score columns', () => {
     /** Builds a scored row carrying the given per-scorer outcomes. */
     function rowWith(scorerResults: ScorerRunResult[]): ResultRow {

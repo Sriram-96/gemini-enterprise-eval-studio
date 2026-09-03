@@ -33,6 +33,10 @@ violate data privacy policies.
     the data stores and connectors they came from, the tools it ran and its
     thinking, so a tester can confirm *how* an answer was reached and not only
     that it sounded plausible. See [Verifying Retrieval](#verifying-retrieval).
+-   **Per-Row Agent Targeting**: An optional `agent` column sends individual
+    rows to a named custom agent of the engine instead of its default
+    assistant, so one upload can compare the two on the same queries. See
+    [Evaluating a custom agent](#evaluating-a-custom-agent).
 
 ## Data Privacy and Governance
 
@@ -147,6 +151,73 @@ regressions already do. See
 and [testdata/connector-fixtures/](testdata/connector-fixtures/) for a worked
 example: six synthetic documents to upload to a connector and a query set whose
 answers are impossible to guess without retrieving them.
+
+## Evaluating a custom agent
+
+By default every row is answered by the engine's own default assistant. To send
+a row to one of the engine's custom agents instead, add an `agent` column to
+your query set and put the agent's **id** in it:
+
+```csv
+query,golden,agent
+"What is the per diem for Zurich?","65 CHF per day",
+"Triage INC-4471","Page the storage on-call",dc-triage
+```
+
+The first row has an empty cell, so it goes to the default assistant exactly as
+before; the second is served by the `dc-triage` agent. A query set with no
+`agent` column at all behaves as it always has, so existing files need no
+change.
+
+**Use the id, not the resource name.** Gemini Enterprise identifies an agent by
+a resource name of the form
+
+```
+projects/{project}/locations/{location}/collections/{collection}/engines/{engine}/assistants/{assistant}/agents/{agent}
+```
+
+and the column takes only that last `{agent}` segment — not the whole path. In
+the Gemini Enterprise console it is the id shown on the agent's page, and it is
+also the tail of the URL when the agent is open. Ids take several shapes in
+practice: built-in agents have readable ids such as `deep_research`, while
+agents created in the console are identified by a long number such as
+`7988451370136689726`. Pasting a full resource name is the easiest mistake to
+make, so the app checks the column before the run starts and, if it finds one,
+tells you which segment to use instead. Nothing is sent until the whole column
+is valid, so that mistake costs a message rather than a run.
+
+> **Check the id against the console before a long run.** `streamAssist` does
+> not reject an agent id that names nothing: it answers with **HTTP 200 from
+> the engine's default assistant**. A mistyped but well-formed id therefore
+> produces a complete, plausible, fully scored run that simply did not test the
+> agent you meant, and neither this app nor the API can tell you so. The
+> surest check is a single-row query set: ask *"Who are you?"* with the agent
+> id filled in, and confirm the answer is the agent's and not the default
+> assistant's.
+
+To list the ids available on an engine, with an access token for the project:
+
+```sh
+curl -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://discoveryengine.googleapis.com/v1alpha/projects/PROJECT/locations/global/collections/default_collection/engines/ENGINE/assistants/default_assistant/agents"
+```
+
+**One agent per conversation.** The turns of a multi-turn row group (rows
+sharing a `conversation_id`) run against a single Assistant session, and
+switching the serving agent part-way through one is not a defined operation.
+Every turn of a conversation must therefore name the same agent — or all leave
+it empty. A group that disagrees is rejected before the run starts.
+
+The agent that served each row is reported back: the results table gains an
+**Agent** column, the CSV export carries it as `agentId`, and the JSONL trace
+export records it alongside the session and turn ids, so a mixed run stays
+attributable row by row. The column is present whether or not any row used a
+custom agent, and is empty for the rows the default assistant answered.
+
+Because the agent is chosen per row, one upload can compare a custom agent
+against the default assistant on the same queries: duplicate each query, leave
+the `agent` cell empty on one copy and fill it on the other, and read the two
+scores off the same table.
 
 ## Reproducing reported bugs
 

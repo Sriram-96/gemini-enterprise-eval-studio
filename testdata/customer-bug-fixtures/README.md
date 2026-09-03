@@ -26,9 +26,15 @@ one upload.
 | --- | --- |
 | `query`, `golden` | Read by the run. `golden` is the expected answer. |
 | `conversation_id`, `turn` | Group and order the multi-turn rows. Blank on single-turn rows. |
+| `agent` | Which custom agent serves the row. Blank on every row here, meaning the engine's default assistant. |
 | `expected_sources` | Read by the **Source Attribution** scorer. Blank rows are recorded as skips, not zeros. |
 | `bug` | Backlog number. Documentation only — not read by the run. |
 | `check` | What actually decides this row: `answer`, `sources`, `thoughts`, `trace`, `latency`, or a combination. Documentation only. |
+
+These bugs are all about the engine's default assistant, so `agent` is blank
+throughout. Fill it in on a row to send that row to a custom agent instead —
+every turn of one `conversation_id` must name the same agent. See
+[Evaluating a custom agent](../../README.md#evaluating-a-custom-agent).
 
 `bug` and `check` are extra columns. The uploader lowercases headers and ignores
 anything beyond the columns it knows, so they cost nothing at run time — but

@@ -22,6 +22,7 @@ import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig} from '../../models/app-config.model';
 import {CSVRow} from '../../models/csv-row.model';
+import {validateAgentColumn} from '../../models/csv-row.util';
 import {ResultRow} from '../../models/result-row.model';
 import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
 import {ScorerRegistry} from '../../scoring/scorer.registry';
@@ -43,6 +44,7 @@ const BASE_COLUMNS: readonly ColumnDef[] = [
   {header: 'Fetched', key: 'fetched', type: 'markdown', truncate: true},
   {header: 'Sources', key: 'citedSources', truncate: true},
   {header: 'Connectors', key: 'citedConnectors', truncate: true},
+  {header: 'Agent', key: 'agentId', truncate: true},
   {header: 'Conversation', key: 'conversationId', truncate: true},
   {header: 'Turn', key: 'turn', type: 'number'},
   {header: 'TTFT (s)', key: 'ttft', type: 'number'},
@@ -142,6 +144,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
                            query: row.query,
                            conversationId: row.conversationId,
                            turn: row.turn,
+                           agentId: row.agentId,
                            assistToken: row.assistToken,
                            session: row.session,
                            turnId: row.turnId,
@@ -278,6 +281,16 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
    */
   async startEvaluation(event: {file: File, rows: CSVRow[]}) {
     if (this.isProcessing) return;
+
+    // Checked before anything is cleared or sent, so a query set with a bad
+    // `agent` column costs the user a message rather than a run.
+    const agentError = validateAgentColumn(event.rows);
+    if (agentError) {
+      this.errorMessage = agentError;
+      this.cdr.detectChanges();
+      return;
+    }
+
     const runId = ++this.currentRunId;
     this.errorMessage = null;
     this.isProcessing = true;

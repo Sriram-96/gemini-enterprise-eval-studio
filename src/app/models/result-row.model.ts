@@ -86,6 +86,15 @@ export interface ResultRow {
   projectId?: string;
   region?: string;
   engineId?: string;
+  /**
+   * The custom agent that served the row, from the input CSV's `agent`
+   * column, or empty when the engine's default assistant answered.
+   *
+   * Shares the `thoughts` contract above: always set, empty rather than
+   * absent, so a run whose first row used the default assistant still keeps
+   * the column for the rows that did not.
+   */
+  agentId?: string;
   /** Error message of the first scorer that failed, if any. */
   scoreError?: string;
   /** Conversation grouping id from the input CSV, present only for multi-turn rows. */

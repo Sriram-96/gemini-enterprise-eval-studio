@@ -38,6 +38,12 @@ interface AssistRequestBody {
     };
     webGroundingSpec?: {};
   };
+  /**
+   * Names the custom agent that serves the request. The endpoint stays
+   * `assistants/default_assistant:streamAssist` either way: a custom agent is
+   * selected through this field, not through the URL.
+   */
+  agentsSpec?: {agentSpecs: Array<{agentId: string}>};
 }
 
 /**
@@ -71,6 +77,9 @@ export class EvalService {
     const config = this.stateService.getCurrentConfig();
 
 
+    // The bare agent id, empty for the engine's own default assistant.
+    const agentId = row.agent?.trim() || '';
+
     const toolsSpec: NonNullable<AssistRequestBody['toolsSpec']> = {};
 
     if (config.selectedDataStores && config.selectedDataStores.length > 0) {
@@ -82,7 +91,12 @@ export class EvalService {
                   ds}`
             }))
       };
-    } else if (!config.enableWebSearch) {
+    } else if (!config.enableWebSearch && !agentId) {
+      // Searching everything the engine knows is the right default for the
+      // engine's own assistant. A custom agent, though, comes with its own
+      // tool configuration, and an unasked-for empty search spec would speak
+      // over it. Data stores and web search the user did pick are still sent
+      // below, because those are a deliberate instruction.
       toolsSpec.vertexAiSearchSpec = {};
     }
 
@@ -92,8 +106,17 @@ export class EvalService {
 
     const body: AssistRequestBody = {
       query: {text: row.query},
-      toolsSpec,
     };
+
+    // Only a custom agent left to its own tools reaches this empty: for the
+    // default assistant one of the branches above always fires.
+    if (Object.keys(toolsSpec).length > 0) {
+      body.toolsSpec = toolsSpec;
+    }
+
+    if (agentId) {
+      body.agentsSpec = {agentSpecs: [{agentId}]};
+    }
 
     // Note: the `isSessionLess` proto field is not recognized by the v1
     // streamAssist REST surface ("Unknown name \"isSessionLess\"": 400), so
@@ -272,6 +295,7 @@ export class EvalService {
         projectId,
         region,
         engineId,
+        agentId,
         session: sessionInfo?.session,
         turnId: sessionInfo?.turnId
       };
@@ -299,6 +323,7 @@ export class EvalService {
         projectId,
         region,
         engineId,
+        agentId,
         session: sessionInfo?.session,
         turnId: sessionInfo?.turnId
       };

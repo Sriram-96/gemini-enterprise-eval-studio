@@ -478,6 +478,183 @@ describe('EvalService', () => {
     });
   });
 
+  describe('processRow agent targeting', () => {
+    let service: EvalService;
+
+    /** A streamed assist response carrying a single answer. */
+    function answered(): Promise<Response> {
+      return Promise.resolve(new Response(JSON.stringify(
+          [{answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}}])));
+    }
+
+    /** The body of the most recent streamAssist call. */
+    function sentBody(): any {
+      return mockBackendService.callAssistSpy.calls.mostRecent().args[0].body;
+    }
+
+    beforeEach(() => {
+      service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(answered());
+    });
+
+    /** Points the service at a config, defaulting to the shared one. */
+    function useConfig(config: AppConfig = CONFIG) {
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(config);
+    }
+
+    it('should name a custom agent by its bare id', async () => {
+      useConfig();
+
+      await service.processRow({query: 'q', golden: 'g', agent: 'dc-triage'});
+
+      expect(sentBody().agentsSpec).toEqual({
+        agentSpecs: [{agentId: 'dc-triage'}]
+      });
+    });
+
+    it('should still address the engine, not the agent, on the wire',
+       async () => {
+         // A custom agent is selected through the request body; the endpoint
+         // stays `assistants/default_assistant:streamAssist`. Sending the
+         // agent in the path instead would 404.
+         useConfig();
+
+         await service.processRow({query: 'q', golden: 'g', agent: 'dc-triage'});
+
+         const request =
+             mockBackendService.callAssistSpy.calls.mostRecent().args[0];
+         expect(request.selectedEngine).toBe('engine');
+       });
+
+    it('should trim surrounding whitespace from the agent id', async () => {
+      // Spreadsheets pad cells; ' dc-triage' is not an RFC-1034 name and
+      // would be rejected by the API.
+      useConfig();
+
+      await service.processRow({query: 'q', golden: 'g', agent: '  dc-triage '});
+
+      expect(sentBody().agentsSpec).toEqual({
+        agentSpecs: [{agentId: 'dc-triage'}]
+      });
+    });
+
+    it('should omit agentsSpec when the row names no agent', async () => {
+      useConfig();
+
+      await service.processRow({query: 'q', golden: 'g'});
+
+      expect(sentBody().agentsSpec).toBeUndefined();
+    });
+
+    it('should omit agentsSpec for an empty or whitespace-only agent cell',
+       async () => {
+         useConfig();
+
+         await service.processRow({query: 'q', golden: 'g', agent: '   '});
+
+         expect(sentBody().agentsSpec).toBeUndefined();
+       });
+
+    it('should leave a custom agent to its own tools when the user selected none',
+       async () => {
+         // The default assistant gets an implicit empty vertexAiSearchSpec so
+         // it searches everything the engine knows. A custom agent carries its
+         // own tool configuration, which that unasked-for spec would override.
+         useConfig();
+
+         await service.processRow({query: 'q', golden: 'g', agent: 'dc-triage'});
+
+         expect(sentBody().toolsSpec).toBeUndefined();
+       });
+
+    it('should keep searching everything for the default assistant',
+       async () => {
+         useConfig();
+
+         await service.processRow({query: 'q', golden: 'g'});
+
+         expect(sentBody().toolsSpec).toEqual({vertexAiSearchSpec: {}});
+       });
+
+    it('should send data stores the user picked to a custom agent',
+       async () => {
+         // Suppressing the implicit default must not swallow a deliberate
+         // instruction.
+         useConfig({...CONFIG, selectedDataStores: ['store-a']});
+
+         await service.processRow({query: 'q', golden: 'g', agent: 'dc-triage'});
+
+         expect(sentBody().toolsSpec).toEqual({
+           vertexAiSearchSpec: {
+             dataStoreSpecs: [{
+               dataStore:
+                   'projects/project/locations/global/collections/default_collection/dataStores/store-a'
+             }]
+           }
+         });
+       });
+
+    it('should send web grounding the user enabled to a custom agent',
+       async () => {
+         useConfig({...CONFIG, enableWebSearch: true});
+
+         await service.processRow({query: 'q', golden: 'g', agent: 'dc-triage'});
+
+         expect(sentBody().toolsSpec).toEqual({webGroundingSpec: {}});
+       });
+
+    it('should thread a session alongside the agent for a multi-turn row',
+       async () => {
+         useConfig();
+
+         await service.processRow(
+             {query: 'q', golden: 'g', agent: 'dc-triage'}, undefined,
+             {session: 'projects/p/locations/global/collections/default_collection/engines/e/sessions/123'});
+
+         expect(sentBody().agentsSpec).toEqual({
+           agentSpecs: [{agentId: 'dc-triage'}]
+         });
+         expect(sentBody().session)
+             .toBe(
+                 'projects/p/locations/global/collections/default_collection/engines/e/sessions/123');
+       });
+
+    it('should report which agent served the row', async () => {
+      useConfig();
+
+      const result =
+          await service.processRow({query: 'q', golden: 'g', agent: 'dc-triage'});
+
+      expect(result.agentId).toBe('dc-triage');
+    });
+
+    it('should report an empty agent rather than none for the default assistant',
+       async () => {
+         // Same contract as `thoughts`: the CSV export takes its header from
+         // the first row alone, so a missing key there would drop the column
+         // for every row of the run, including the ones that named an agent.
+         useConfig();
+
+         const result = await service.processRow({query: 'q', golden: 'g'});
+
+         expect(result.agentId).toBe('');
+       });
+
+    it('should report the agent on a row that failed', async () => {
+      // Knowing which agent produced the failure is the whole point of the
+      // column when a run goes wrong.
+      useConfig();
+      mockBackendService.callAssistSpy.and.returnValue(
+          Promise.resolve(new Response('', {status: 500})));
+
+      const result =
+          await service.processRow({query: 'q', golden: 'g', agent: 'dc-triage'});
+
+      expect(result.fetched).toContain('Error:');
+      expect(result.agentId).toBe('dc-triage');
+    });
+  });
+
   describe('processRow trace capture', () => {
     let service: EvalService;
 

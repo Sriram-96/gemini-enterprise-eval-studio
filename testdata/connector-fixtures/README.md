@@ -46,6 +46,11 @@ in the file and do not have to be in turn order. Rows with a blank
 only part of the set, filter the file in a spreadsheet — the grouping does not
 depend on row position.
 
+The `agent` column is blank on every row, which sends the whole set to the
+engine's default assistant. Fill it in to point rows at a custom agent instead;
+all turns of one `conversation_id` must name the same one. See
+[Evaluating a custom agent](../../README.md#evaluating-a-custom-agent).
+
 Neither block is a set of variations on one test; each group probes a different
 failure mode.
 
