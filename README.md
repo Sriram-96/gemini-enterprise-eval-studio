@@ -148,6 +148,19 @@ and [testdata/connector-fixtures/](testdata/connector-fixtures/) for a worked
 example: six synthetic documents to upload to a connector and a query set whose
 answers are impossible to guess without retrieving them.
 
+## Reproducing reported bugs
+
+[testdata/customer-bug-fixtures/](testdata/customer-bug-fixtures/) holds a query
+set built to reproduce specific customer-reported defects rather than to
+measure general quality: multi-turn document context loss, thinking traces that
+misread domain acronyms, connector fallbacks that retrieve a superseded file,
+knowledge base documents described as user uploads, and output-hygiene defects
+such as duplicated trailing tokens and leaked HTML. It runs as a single upload
+with the default auto-rater instruction, every row carries the backlog number it
+came from and a `check` column naming what decides it, and the README there is
+explicit about which of these bugs the tool can score automatically and which
+need a column read by hand.
+
 ## Running with Docker
 
 Gemini Enterprise Eval Studio includes a multi-stage `Dockerfile` that packages both the compiled Angular SPA and the Node.js Express backend server into a single production container image.

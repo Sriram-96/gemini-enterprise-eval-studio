@@ -21,8 +21,9 @@ correct answer is only possible if the document was actually read.
 
 ## The documents
 
-Upload all six. Name each Google Doc **exactly** as listed, because
-`expected_sources` matches on a substring of the document title.
+They live in [`documents/`](documents/). Upload all six, and name each Google
+Doc **exactly** as listed, because `expected_sources` matches on a substring of
+the document title.
 
 | File | Google Doc title |
 | --- | --- |
