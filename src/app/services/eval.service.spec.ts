@@ -361,7 +361,8 @@ describe('EvalService', () => {
       const result = await service.processRow({query: 'q', golden: 'g'});
 
       expect(result.thoughts).toBe('');
-      expect(result.fetched).toContain('Error:');
+      expect(result.fetched).toBe('Request failed with status 500');
+      expect(result.errorCode).toBe('HTTP 500');
     });
 
     it('should preserve the fetched text if scoring throws an error',
@@ -598,7 +599,7 @@ describe('EvalService', () => {
 
       const result = await service.processRow({query: 'q', golden: 'g'});
 
-      expect(result.fetched).toContain('Error');
+      expect(result.errorCode).toBe('HTTP 500');
       expect(result.citedSources).toBe('');
       expect(result.toolCalls).toBe('');
       expect(result.maxGroundingScore).toBe(0);

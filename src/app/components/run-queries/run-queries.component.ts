@@ -139,6 +139,7 @@ export class RunQueriesComponent {
         ...this.responseResults, {
           query: result.query,
           response: result.fetched,
+          errorCode: result.errorCode,
           ttft: result.ttft,
           ttfa: result.ttfa,
           ttlt: result.ttlt,

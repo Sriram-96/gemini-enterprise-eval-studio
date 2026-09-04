@@ -88,6 +88,15 @@ export interface ResultRow {
   engineId?: string;
   /** Error message of the first scorer that failed, if any. */
   scoreError?: string;
+  /**
+   * Structured code for a failed or skipped row: `HTTP <status>`,
+   * `RATE_LIMITED`, `SKIPPED`, or `ERROR`. Empty string on success.
+   *
+   * Always set by `EvalService.processRow` (empty, not absent) so the CSV
+   * export — whose header comes from the first row alone — always keeps the
+   * column. The clean, human-readable message lives in `fetched`.
+   */
+  errorCode?: string;
   /** Conversation grouping id from the input CSV, present only for multi-turn rows. */
   conversationId?: string;
   /** 1-based turn number within the conversation. */
