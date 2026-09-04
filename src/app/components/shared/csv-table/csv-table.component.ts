@@ -53,6 +53,12 @@ export class CsvTableComponent implements OnChanges {
    * row are unaffected.
    */
   @Input() rowActionLabel?: string;
+  /**
+   * Key on each row whose truthy value marks the row as an error. When set, such
+   * rows are highlighted (light-red fill + red outline) so failures stand out.
+   * Left unset, no row is highlighted, so other tables are unaffected.
+   */
+  @Input() rowErrorKey?: string;
   /** Emits the index of the row whose action button was clicked. */
   @Output() rowAction = new EventEmitter<number>();
 
