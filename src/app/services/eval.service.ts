@@ -166,9 +166,14 @@ export class EvalService {
               errorData.details?.[0]?.reason || 'Rate limit exceeded';
           throw new AssistError('RATE_LIMITED', `Rate limited: ${reason}`);
         }
+        // The server's reason phrase (e.g. "Unauthorized") is included when it
+        // sends one; it is often empty over HTTP/2, so fall back to the status
+        // number alone rather than inventing a meaning for it.
+        const reason = response.statusText?.trim();
         throw new AssistError(
             `HTTP ${response.status}`,
-            `Request failed with status ${response.status}`);
+            reason ? `HTTP error ${response.status} (${reason})` :
+                     `HTTP error ${response.status}`);
       }
 
       const reader = response.body!.getReader();
