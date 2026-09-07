@@ -510,6 +510,7 @@ describe('RunEvaluationComponent', () => {
                  ttft: 10,
                  ttfa: 20,
                  ttlt: 30,
+                 tpot: 0,
                  score: 0.9,
                  session: `session-after-${row.query}`,
                };
