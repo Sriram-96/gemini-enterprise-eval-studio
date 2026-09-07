@@ -101,11 +101,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   memorySupport: MemorySupport = 'unknown';
   /** Whether the run is paused between the seed phase and the rest. */
   isSettlingMemories = false;
-  showMemoryConsentModal = false;
-  /** The reset queries awaiting confirmation, listed in the consent modal. */
-  pendingResetQueries: string[] = [];
-  /** The seed queries awaiting confirmation, listed in the consent modal. */
-  pendingSeedQueries: string[] = [];
   /**
    * The seed queries of the finished run, listed in the teardown notice.
    *
@@ -115,8 +110,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   seededQueries: string[] = [];
   private readonly destroy$ = new Subject<void>();
   private currentRunId = 0;
-  private pendingMemoryRun: {file: File, rows: CSVRow[]}|null = null;
-  private memoryRunConfirmed = false;
 
   columns: ColumnDef[] = [...BASE_COLUMNS, SINGLE_SCORE_COLUMN];
 
@@ -336,7 +329,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
         conversations.filter(turns => !orderedPhaseOf(turns));
 
     if ((resetConversations.length > 0 || seedConversations.length > 0) &&
-        !this.approveMemoryRun(event, resetConversations, seedConversations)) {
+        !this.canChangeMemories()) {
       return;
     }
 
@@ -435,24 +428,19 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Decides whether a run that changes saved memories may start.
+   * Whether a run that clears or seeds saved memories may start.
    *
-   * Unlike every other run, this one changes state that outlives it on the
-   * authenticated account, so it asks first. Reset rows are the reason the
-   * modal lists both phases separately: a seed row adds something the tester
-   * can review afterwards, but a reset row asks the assistant to delete what
-   * is already there, including memories this tool never created.
+   * The run is not confirmed with the tester. Reset and seed rows change state
+   * that outlives the run on the authenticated account — a reset row asks the
+   * assistant to delete what is already there, including memories this tool
+   * never created — so a file carrying them is a file to look at before
+   * uploading, not after. What the run does say is what it left behind: the
+   * teardown notice lists the seed queries once the run finishes.
    *
-   * Confirmation is remembered for the rest of the session: the teardown
-   * notice after each run is what keeps the tester informed from then on.
-   * @param event The upload being run, held for replay after confirmation.
-   * @param resetConversations The conversations that will clear memories.
-   * @param seedConversations The conversations that will seed memories.
-   * @returns True to start now, false when refused or awaiting confirmation.
+   * The one refusal left is not a question but a fact about the engine.
+   * @returns True to start now, false when the engine cannot do this at all.
    */
-  private approveMemoryRun(
-      event: {file: File, rows: CSVRow[]}, resetConversations: CSVRow[][],
-      seedConversations: CSVRow[][]): boolean {
+  private canChangeMemories(): boolean {
     if (this.memorySupport === 'off') {
       this.errorMessage =
           'This engine reports saved memories (personalization-memory) as ' +
@@ -463,35 +451,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
       return false;
     }
 
-    if (this.memoryRunConfirmed) {
-      return true;
-    }
-
-    this.pendingMemoryRun = event;
-    this.pendingResetQueries = resetConversations.flat().map(row => row.query);
-    this.pendingSeedQueries = seedConversations.flat().map(row => row.query);
-    this.showMemoryConsentModal = true;
-    this.cdr.detectChanges();
-    return false;
-  }
-
-  /** Accepts the seeding warning and starts the run that was held back. */
-  confirmMemoryRun() {
-    const event = this.pendingMemoryRun;
-    this.showMemoryConsentModal = false;
-    this.pendingMemoryRun = null;
-    if (!event) return;
-    this.memoryRunConfirmed = true;
-    this.startEvaluation(event);
-  }
-
-  /** Declines the seeding warning, leaving the account untouched. */
-  cancelMemoryRun() {
-    this.showMemoryConsentModal = false;
-    this.pendingMemoryRun = null;
-    this.pendingResetQueries = [];
-    this.pendingSeedQueries = [];
-    this.cdr.detectChanges();
+    return true;
   }
 
   /** Dismisses the post-run teardown notice. */

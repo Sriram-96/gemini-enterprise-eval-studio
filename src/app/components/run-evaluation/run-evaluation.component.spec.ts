@@ -419,8 +419,7 @@ describe('RunEvaluationComponent', () => {
       return {started, finishedWhenStarted};
     }
 
-    it('should hold a seeding run behind a confirmation gate and send nothing until it is accepted',
-       fakeAsync(() => {
+    it('should start a seeding run without asking the tester first', fakeAsync(() => {
          const component = setUp();
          recordOrder();
 
@@ -430,35 +429,10 @@ describe('RunEvaluationComponent', () => {
          });
          tick();
 
-         // Seeding writes state that outlives the run, so nothing may be sent
-         // before the tester has seen what will be saved.
-         expect(component.showMemoryConsentModal).toBeTrue();
-         expect(component.pendingSeedQueries).toEqual(['remember X']);
-         expect(mockEvalService.processRow).not.toHaveBeenCalled();
-         expect(component.isProcessing).toBeFalse();
-
-         component.confirmMemoryRun();
-         tick();
-
-         expect(component.showMemoryConsentModal).toBeFalse();
+         // Seeding writes state that outlives the run, but the file is what
+         // states the intent: uploading one that seeds is the decision.
          expect(mockEvalService.processRow).toHaveBeenCalledTimes(1);
-       }));
-
-    it('should abandon the run when the confirmation is declined', fakeAsync(() => {
-         const component = setUp();
-         recordOrder();
-
-         component.startEvaluation({
-           file: new File([], 'test.csv'),
-           rows: [{query: 'remember X', golden: 'ok', phase: 'seed'}]
-         });
-         tick();
-         component.cancelMemoryRun();
-         tick();
-
-         expect(component.showMemoryConsentModal).toBeFalse();
-         expect(component.pendingSeedQueries).toEqual([]);
-         expect(mockEvalService.processRow).not.toHaveBeenCalled();
+         expect(component.isProcessing).toBeFalse();
        }));
 
     it('should run every seed row, one at a time, before any other row and only after the settle delay',
@@ -478,7 +452,6 @@ describe('RunEvaluationComponent', () => {
            ]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
 
          // Both seed rows have run, sequentially, and the recall row is still
@@ -512,7 +485,6 @@ describe('RunEvaluationComponent', () => {
            ]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
 
          // A seed row that overlapped the deletion could be deleted by it, so
@@ -546,7 +518,6 @@ describe('RunEvaluationComponent', () => {
            ]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
 
          // The verification row only means anything after the deletion it
@@ -564,9 +535,9 @@ describe('RunEvaluationComponent', () => {
          expect(component.seededQueries).toEqual([]);
        }));
 
-    it('should warn about the deletion before a reset row is sent', fakeAsync(() => {
+    it('should send a reset row without asking the tester first', fakeAsync(() => {
          const component = setUp();
-         recordOrder();
+         const {started} = recordOrder();
 
          component.startEvaluation({
            file: new File([], 'test.csv'),
@@ -577,18 +548,7 @@ describe('RunEvaluationComponent', () => {
          });
          tick();
 
-         // A reset row deletes memories the tool never created and cannot undo
-         // it, so the queries have to be on screen before anything is sent.
-         expect(component.showMemoryConsentModal).toBeTrue();
-         expect(component.pendingResetQueries).toEqual(['forget everything']);
-         expect(component.pendingSeedQueries).toEqual(['seed1']);
-         expect(mockEvalService.processRow).not.toHaveBeenCalled();
-
-         component.cancelMemoryRun();
-         tick();
-
-         expect(component.pendingResetQueries).toEqual([]);
-         expect(mockEvalService.processRow).not.toHaveBeenCalled();
+         expect(started).toEqual(['forget everything']);
        }));
 
     it('should settle after a reset-only file before its ordinary rows run',
@@ -604,7 +564,6 @@ describe('RunEvaluationComponent', () => {
            ]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
 
          // With no seed phase in between, the ordinary rows are what has to
@@ -628,7 +587,6 @@ describe('RunEvaluationComponent', () => {
            rows: [{query: 'forget everything', golden: 'ok', phase: 'reset'}]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
 
          // Nothing is waiting on the write, so the run has no reason to hold
@@ -666,7 +624,6 @@ describe('RunEvaluationComponent', () => {
            ]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
          tick(MEMORY_SETTLE_MS);
 
@@ -689,7 +646,6 @@ describe('RunEvaluationComponent', () => {
            ]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
          tick(MEMORY_SETTLE_MS);
 
@@ -716,7 +672,6 @@ describe('RunEvaluationComponent', () => {
          tick();
 
          expect(component.errorMessage).toContain('personalization-memory');
-         expect(component.showMemoryConsentModal).toBeFalse();
          expect(mockEvalService.processRow).not.toHaveBeenCalled();
          expect(component.isProcessing).toBeFalse();
        }));
@@ -730,7 +685,6 @@ describe('RunEvaluationComponent', () => {
            rows: [{query: 'remember X', golden: 'ok', phase: 'seed'}]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
 
          expect(component.errorMessage).toBeNull();
@@ -751,7 +705,6 @@ describe('RunEvaluationComponent', () => {
          tick();
 
          expect(component.errorMessage).toContain('new chat');
-         expect(component.showMemoryConsentModal).toBeFalse();
          expect(mockEvalService.processRow).not.toHaveBeenCalled();
          expect(component.step).not.toBe(3);
        }));
@@ -770,7 +723,6 @@ describe('RunEvaluationComponent', () => {
            ]
          });
          tick();
-         component.confirmMemoryRun();
          tick();
          tick(MEMORY_SETTLE_MS);
 
@@ -796,7 +748,6 @@ describe('RunEvaluationComponent', () => {
          component.startEvaluation(
              {file: new File([], 'a.csv'), rows: seedThenRecall});
          tick();
-         component.confirmMemoryRun();
          tick();
          expect(component.isSettlingMemories).toBeTrue();
          component.stopEvaluation();
@@ -833,7 +784,6 @@ describe('RunEvaluationComponent', () => {
          });
          tick();
 
-         expect(component.showMemoryConsentModal).toBeFalse();
          expect(component.seededQueries).toEqual([]);
          expect(started).toEqual(['q1', 'q2']);
          expect(component.completedRows).toBe(2);

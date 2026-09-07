@@ -29,14 +29,14 @@ saved *and* recalled.
     it, and the `reset` rows ask the assistant to **delete every memory it holds
     for that user** — not just the ones this file created, and not undoably. Do
     not point this at an account whose memories you would miss.
+-   **Nothing asks you to confirm.** Pressing Run sends the reset rows straight
+    away. Uploading this file *is* the decision to clear the account, so check
+    which account the token belongs to first.
 -   **The engine needs `personalization-memory` on.** The run reads the flag
     when you select an engine and refuses a seeding run outright against an
     engine that reports it off. An engine that reports neither way is not
-    thereby off: the run proceeds, the confirmation says so, and the detected
-    state lands on every memory row of the results.
--   **Read the confirmation.** The run holds the whole file behind a modal that
-    lists the reset queries and the seed queries before sending any of them.
-    That modal is the last point at which the deletion can be called off.
+    thereby off: the run proceeds and the detected state lands on every memory
+    row of the results.
 -   **Pick an answer scorer, not Source Attribution.** No row cites a document,
     so attribution would record every row as a skip.
 

@@ -64,8 +64,8 @@ architecture:
     things, and anything it saves persists on the signed-in user's account
     after the run ends, inside your tenant. A `reset` row asks it to delete
     saved memories, which is likewise not limited to this run and cannot be
-    undone. Runs that reset or seed memories require explicit confirmation,
-    listing both sets of queries first, and report what they left behind. See
+    undone, and neither is gated behind a confirmation prompt — the query set
+    is the instruction. A run reports what it left behind. See
     [Evaluating Saved Memories](#evaluating-saved-memories).
 
 ## Prerequisites & Setup
@@ -217,9 +217,9 @@ to delete.
 -   **Check the feature is on.** Selecting an engine reads
     `personalization-memory` off it, and a run with seed rows is refused
     outright against an engine that reports the feature disabled. An engine that
-    reports neither way is not thereby disabled, so the run proceeds and the
-    confirmation says so — but a failing recall row is then inconclusive. Either
-    way the detected state is recorded on every memory row of the results.
+    reports neither way is not thereby disabled, so the run proceeds — but a
+    failing recall row is then inconclusive. Either way the detected state is
+    recorded on every memory row of the results.
 -   **Include a positive control.** A recall row can fail because the answer was
     wrong *or* because the memory was never saved, and the two are
     indistinguishable from the score alone. Pair each recall row with one whose
@@ -243,11 +243,13 @@ crashes never reaches a teardown step, but it does reach the next run's reset.
 
 Because both phases change state that outlives the run:
 
--   A run with `reset` or `seed` rows asks for confirmation first, listing the
-    reset queries and the seed queries separately before either is sent.
+-   **A run starts as soon as you press Run — there is no confirmation step.**
+    The file states the intent, so read a file's `reset` and `seed` rows before
+    uploading it rather than expecting the tool to ask.
 -   **A reset row is not limited to memories this tool created.** It asks the
-    assistant to delete what it holds for the signed-in user, and it cannot be
-    undone. Prefer a dedicated test identity over a real user account.
+    assistant to delete what it holds for the signed-in user, it cannot be
+    undone, and nothing will stop you. Prefer a dedicated test identity over a
+    real user account.
 -   After the run, a notice lists the seed queries. Re-running the same file
     clears them; otherwise remove them by hand in Gemini Enterprise
     (**Settings › Personalization › Memories**).
