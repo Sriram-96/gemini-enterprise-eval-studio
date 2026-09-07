@@ -69,10 +69,44 @@
       [(csvRows)]="uploadedRows"
       (prev)="prevStep()"
       (run)="startEvaluation($event)"
-      [instruction]="'CSV file with at least \'query\' and \'golden\' columns, plus an optional \'expected_sources\' column for the Source Attribution scorer'"
+      [instruction]="'CSV file with at least \'query\' and \'golden\' columns, plus optional \'expected_sources\' for the Source Attribution scorer and \'phase\' (seed / recall) for saved-memory evaluations'"
       [buttonText]="'Run Evaluation'"
       [requiredColumns]="['query', 'golden']"
     ></app-file-upload>
+  </div>
+
+  <!-- Teardown notice for a run that seeded memories -->
+  <div
+    *ngIf="step === 3 && !isProcessing && seededQueries.length > 0"
+    class="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-md"
+  >
+    <div class="flex">
+      <div class="flex-shrink-0">
+        <svg class="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+        </svg>
+      </div>
+      <div class="ml-3 space-y-2">
+        <p class="text-sm font-medium text-amber-800">
+          This run may have saved memories to your account.
+        </p>
+        <p class="text-sm text-amber-700">
+          There is no API to delete them, so they persist until you remove them
+          by hand in Gemini Enterprise (Settings &rsaquo; Personalization &rsaquo;
+          Memories). Re-running this file without clearing them first will save
+          near-duplicate memories and can change what later runs recall.
+        </p>
+        <ul class="text-sm text-amber-700 list-disc list-inside space-y-0.5">
+          <li *ngFor="let query of seededQueries">{{ query }}</li>
+        </ul>
+        <button
+          (click)="dismissTeardownNotice()"
+          class="text-sm font-medium text-amber-800 underline hover:text-amber-900"
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Results Table -->
@@ -117,7 +151,7 @@
   <app-progress-bar
     *ngIf="isProcessing"
     [progress]="progress"
-    [text]="'Evaluating... (' + completedRows + ' / ' + totalRows + ')'"
+    [text]="progressText"
     [canStop]="true"
     (stop)="stopEvaluation()"
   ></app-progress-bar>
@@ -156,6 +190,44 @@
         class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-md hover:from-blue-700 hover:to-purple-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Re-rate
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Memory Seeding Consent Modal -->
+<div *ngIf="showMemoryConsentModal" class="fixed inset-0 z-50 overflow-y-auto bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
+  <div class="bg-white rounded-lg overflow-hidden shadow-xl transform transition-all max-w-lg w-full p-6 space-y-4">
+    <h3 class="text-lg font-medium text-gray-900">This run will save memories to your account</h3>
+    <p class="text-sm text-gray-600">
+      {{ pendingSeedQueries.length }} seed
+      {{ pendingSeedQueries.length === 1 ? 'row' : 'rows' }} will run first, in
+      order. Anything the assistant chooses to remember from them is saved
+      against the signed-in user and outlives this run &mdash; there is no API
+      to delete it, so you will have to clear it by hand afterwards.
+    </p>
+    <div class="max-h-40 overflow-y-auto bg-gray-50 border border-gray-200 rounded-md p-3">
+      <ul class="text-sm text-gray-700 list-disc list-inside space-y-1">
+        <li *ngFor="let query of pendingSeedQueries">{{ query }}</li>
+      </ul>
+    </div>
+    <p *ngIf="memorySupport === 'unknown'" class="text-sm text-amber-700">
+      This engine did not report whether saved memories are enabled, so the
+      seed rows may have no effect at all. Treat a failing recall row as
+      inconclusive unless a positive control in the same file passes.
+    </p>
+    <div class="flex justify-end space-x-3">
+      <button
+        (click)="cancelMemoryRun()"
+        class="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-50 transition-colors font-medium"
+      >
+        Cancel
+      </button>
+      <button
+        (click)="confirmMemoryRun()"
+        class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-md hover:from-blue-700 hover:to-purple-700 transition-colors font-medium"
+      >
+        Seed and run
       </button>
     </div>
   </div>

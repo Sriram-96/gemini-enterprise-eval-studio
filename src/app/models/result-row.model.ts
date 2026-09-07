@@ -15,6 +15,7 @@
  */
 
 import {ScorerRunResult} from '../scoring/scorer';
+import {MemoryPhase, MemorySupport} from './memory.model';
 import {AssistTrace} from './trace.model';
 
 /**
@@ -118,4 +119,18 @@ export interface ResultRow {
   session?: string;
   /** Turn id returned by the Assistant API for this turn. */
   turnId?: string;
+  /**
+   * The row's memory phase from the input CSV, present only on rows that
+   * declared one. Kept on the result so that a reader of the exported CSV can
+   * tell a seed row — whose answer is usually uninteresting — from the recall
+   * row that carries the actual assertion.
+   */
+  memoryPhase?: MemoryPhase;
+  /**
+   * The engine's saved-memory feature state at the time the row ran, recorded
+   * only on memory rows. A recall row that scores zero because the feature was
+   * off is a different finding from one that scores zero because the answer
+   * was wrong, and the run is not reproducible without knowing which.
+   */
+  memorySupport?: MemorySupport;
 }

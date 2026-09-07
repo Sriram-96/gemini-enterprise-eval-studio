@@ -33,6 +33,10 @@ violate data privacy policies.
     the data stores and connectors they came from, the tools it ran and its
     thinking, so a tester can confirm *how* an answer was reached and not only
     that it sounded plausible. See [Verifying Retrieval](#verifying-retrieval).
+-   **Saved Memory Evaluation**: An optional `phase` column seeds memories in
+    one set of rows and reads them back from fresh sessions in another, so
+    personalization can be tested rather than assumed. See
+    [Evaluating Saved Memories](#evaluating-saved-memories).
 
 ## Data Privacy and Governance
 
@@ -54,6 +58,13 @@ architecture:
     - **SAML**: No credentials or tokens are stored in Firestore. SAML authentication assertions are processed statelessly without storing refresh tokens.
     - **Google Identity & 3P OIDC**: If server-side token storage in Firestore is enabled (`firestore_config`), user refresh tokens are stored in your GCP project's Firestore database. Administrators can configure `firestore_config.ttlSeconds` to control how long refresh tokens remain valid/stored before users are required to sign in again (defaults to 7 days).
     - **Firestore Purge Latency**: Expired tokens in Firestore are automatically purged under a TTL policy, which typically deletes expired documents within 24–72 hours of expiration. Please ensure this retention window satisfies your compliance requirements.
+5.  **Saved Memories (the one exception to statelessness)**: A query set using
+    the optional `phase` column deliberately asks the assistant to remember
+    things, and anything it saves persists on the signed-in user's account
+    after the run ends, inside your tenant. No API exists to delete it, so
+    teardown is manual. Runs that seed memories require explicit confirmation
+    and report what they left behind. See
+    [Evaluating Saved Memories](#evaluating-saved-memories).
 
 ## Prerequisites & Setup
 
@@ -147,6 +158,74 @@ regressions already do. See
 and [testdata/connector-fixtures/](testdata/connector-fixtures/) for a worked
 example: six synthetic documents to upload to a connector and a query set whose
 answers are impossible to guess without retrieving them.
+
+## Evaluating Saved Memories
+
+Gemini Enterprise can remember facts a user tells it and apply them in later,
+unrelated chats. Evaluating that requires a query set that writes a memory and
+then reads it back from a *different* session, which is what the optional
+`phase` column does.
+
+Add `phase` to your CSV and mark each row `seed`, `recall`, or leave it blank:
+
+| query | golden | phase |
+| --- | --- | --- |
+| Remember that I always want distances in kilometres. | Acknowledges the preference. | `seed` |
+| How far is it from the depot to the port? | An answer in kilometres, not miles. | `recall` |
+| What are the store opening hours? | The published hours. | |
+
+**Seed rows all run first, one at a time, before any other row in the file.**
+Saved memories are account-wide state rather than per-session context, so
+seeding concurrently with the rows that read them would make each run depend on
+which request happened to land first. Recall rows and ordinary rows then run
+together across the usual worker pool.
+
+Between the two phases the run pauses for the **memory settle delay** set in the
+configuration form (5 s by default). A memory is saved asynchronously after the
+turn that produced it finishes streaming, so a recall query sent immediately can
+miss a memory that was in fact saved correctly.
+
+Two rules are enforced at upload, and a file that breaks either is refused
+rather than run:
+
+-   A `recall` row cannot carry a `conversation_id`. It has to open a new chat;
+    threading it onto the seed turn would test within-session context, which is
+    a different feature.
+-   All turns of one `conversation_id` must share a phase, since they run in a
+    single session.
+
+Results gain a `Phase` column, and memory rows also record the engine's
+saved-memory feature state so a run stays interpretable later.
+
+### Before you rely on the results
+
+-   **Check the feature is on.** The configuration form reads
+    `personalization-memory` off the engine and shows Enabled, Disabled, or Not
+    reported. A run with seed rows is refused outright against an engine that
+    reports the feature disabled. *Not reported* means the engine did not say
+    either way — the run proceeds, but a failing recall row is inconclusive.
+-   **Include a positive control.** A recall row can fail because the answer was
+    wrong *or* because the memory was never saved, and the two are
+    indistinguishable from the score alone. Pair each recall row with one whose
+    answer does not depend on the memory, so a whole-file failure is
+    recognisable as a seeding problem.
+
+### Teardown is manual
+
+There is **no API to delete a memory** the assistant saved. The studio can seed
+memories by holding the conversation that creates them, but it cannot remove
+them afterwards, so:
+
+-   A run with seed rows asks for confirmation first and lists exactly what it
+    will attempt to save.
+-   After the run, a notice lists the seed queries so you can clear them by hand
+    in Gemini Enterprise (**Settings › Personalization › Memories**).
+-   **Clear them before re-running the same file.** Re-running without clearing
+    saves near-duplicate memories and can change what later runs recall.
+
+Because memories are saved against the signed-in user, prefer a dedicated test
+identity over a real user account, and avoid seeding anything you would not want
+persisted on that account.
 
 ## Reproducing reported bugs
 

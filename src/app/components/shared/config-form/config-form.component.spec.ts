@@ -54,7 +54,11 @@ describe('ConfigFormComponent', () => {
 
     mockStateService = jasmine.createSpyObj(
         'StateService',
-        ['setConfig', 'setEngines', 'getCurrentConfig', 'setErrorMessage'], {
+        [
+          'setConfig', 'setEngines', 'getCurrentConfig', 'setErrorMessage',
+          'setMemorySupport'
+        ],
+        {
           config$: configSubject.asObservable(),
           engines$: enginesSubject.asObservable(),
           errorMessage$: errorMessageSubject.asObservable()

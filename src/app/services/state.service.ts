@@ -19,6 +19,7 @@ import {BehaviorSubject, Subject} from 'rxjs';
 import {debounceTime, map} from 'rxjs/operators';
 
 import {AppConfig, Engine} from '../models/app-config.model';
+import {MemorySupport} from '../models/memory.model';
 import {ResultRow} from '../models/result-row.model';
 
 /**
@@ -109,6 +110,16 @@ export class StateService {
   /** Observable of the error message. */
   errorMessage$ = this.errorMessageSubject.asObservable();
 
+  private memorySupportSubject = new BehaviorSubject<MemorySupport>('unknown');
+  /**
+   * Observable of the selected engine's saved-memory feature state.
+   *
+   * Detected per engine rather than chosen by the user, so it lives here beside
+   * the fetched engines instead of in AppConfig, which is persisted: a stale
+   * value restored from localStorage could block or wave through the wrong run.
+   */
+  memorySupport$ = this.memorySupportSubject.asObservable();
+
   /** Sets the current active tab. */
   setTab(tab: string) {
     this.currentTabSubject.next(tab);
@@ -147,6 +158,16 @@ export class StateService {
   /** Gets the currently fetched engines. */
   getEngines(): Engine[] {
     return structuredClone(this.enginesSubject.value);
+  }
+
+  /** Records the selected engine's saved-memory feature state. */
+  setMemorySupport(memorySupport: MemorySupport) {
+    this.memorySupportSubject.next(memorySupport);
+  }
+
+  /** Gets the selected engine's saved-memory feature state. */
+  getMemorySupport(): MemorySupport {
+    return this.memorySupportSubject.value;
   }
 }
 

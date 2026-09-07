@@ -32,6 +32,13 @@ export interface AppConfig {
   autoRaterInstruction: string;
   selectedDataStores: string[];
   enableWebSearch: boolean;
+  /**
+   * How long to pause between the seed phase and the rest of a memory run, in
+   * milliseconds. Gemini Enterprise saves a memory asynchronously after the
+   * turn that produced it, so a recall query issued immediately can miss it.
+   * Unset falls back to DEFAULT_MEMORY_SETTLE_MS. See models/memory.model.ts.
+   */
+  memorySettleMs?: number;
   // Restored for no-auth mode
   gCloudToken?: string;
 }
@@ -60,7 +67,26 @@ export interface CollectionComponent {
   dataStoreComponents?: DataStoreComponent[];
 }
 
+/**
+ * Whether an engine feature is turned on, as reported by the API. An absent
+ * key and `FEATURE_STATE_UNSPECIFIED` both mean "not stated", which is not the
+ * same as off.
+ */
+export type FeatureState =
+    'FEATURE_STATE_UNSPECIFIED'|'FEATURE_STATE_ON'|'FEATURE_STATE_OFF';
+
+/**
+ * The read-only view of the engine's settings that the widget config exposes.
+ * Its `features` map mirrors `Engine.features`, which is how the studio learns
+ * whether an engine has features like saved memories enabled without needing
+ * permission to read the engine resource itself.
+ */
+export interface WidgetConfigUiSettings {
+  features?: {[key: string]: FeatureState};
+}
+
 export interface WidgetConfigResponse {
   collectionComponents?: CollectionComponent[];
+  uiSettings?: WidgetConfigUiSettings;
 }
 

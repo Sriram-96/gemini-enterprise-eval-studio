@@ -32,5 +32,12 @@ export interface CSVRow {
    * original CSV order.
    */
   turn?: string;
+  /**
+   * Optional. `seed` for a row whose job is to make the assistant save a
+   * memory, `recall` for a row that asks about one in a fresh chat. Seed rows
+   * all run, sequentially, before anything else in the file. Blank behaves
+   * exactly as before. See models/memory.model.ts.
+   */
+  phase?: string;
   [key: string]: string|undefined;
 }

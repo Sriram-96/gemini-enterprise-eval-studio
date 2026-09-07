@@ -67,7 +67,11 @@ describe('ConfigFormComponent multi-scorer selection', () => {
     configSubject = new BehaviorSubject<AppConfig>({...BASE_CONFIG, ...config});
     mockStateService = jasmine.createSpyObj(
         'StateService',
-        ['setConfig', 'setEngines', 'getCurrentConfig', 'setErrorMessage'], {
+        [
+          'setConfig', 'setEngines', 'getCurrentConfig', 'setErrorMessage',
+          'setMemorySupport'
+        ],
+        {
           config$: configSubject.asObservable(),
           engines$: new BehaviorSubject<Engine[]>([]).asObservable(),
           errorMessage$: new BehaviorSubject<string>('').asObservable()

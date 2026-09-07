@@ -22,6 +22,7 @@ import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig} from '../../models/app-config.model';
 import {CSVRow} from '../../models/csv-row.model';
+import {DEFAULT_MEMORY_SETTLE_MS, MemorySupport, isSeedConversation, memoryPhaseOf, validateMemoryRows} from '../../models/memory.model';
 import {ResultRow} from '../../models/result-row.model';
 import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
 import {ScorerRegistry} from '../../scoring/scorer.registry';
@@ -45,6 +46,7 @@ const BASE_COLUMNS: readonly ColumnDef[] = [
   {header: 'Connectors', key: 'citedConnectors', truncate: true},
   {header: 'Conversation', key: 'conversationId', truncate: true},
   {header: 'Turn', key: 'turn', type: 'number'},
+  {header: 'Phase', key: 'memoryPhase'},
   {header: 'TTFT (s)', key: 'ttft', type: 'number'},
   {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
   {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
@@ -95,8 +97,24 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   /** The row whose trace is open in the inspector, if any. */
   inspectedRow: ResultRow|null = null;
   errorMessage: string | null = null;
+  /** The selected engine's saved-memory feature state, as last detected. */
+  memorySupport: MemorySupport = 'unknown';
+  /** Whether the run is paused between the seed phase and the rest. */
+  isSettlingMemories = false;
+  showMemoryConsentModal = false;
+  /** The seed queries awaiting confirmation, listed in the consent modal. */
+  pendingSeedQueries: string[] = [];
+  /**
+   * The seed queries of the finished run, listed in the teardown notice.
+   *
+   * There is no API to delete a memory the assistant saved, so the only honest
+   * thing the studio can do is tell the tester exactly what it left behind.
+   */
+  seededQueries: string[] = [];
   private readonly destroy$ = new Subject<void>();
   private currentRunId = 0;
+  private pendingMemoryRun: {file: File, rows: CSVRow[]}|null = null;
+  private memoryRunConfirmed = false;
 
   columns: ColumnDef[] = [...BASE_COLUMNS, SINGLE_SCORE_COLUMN];
 
@@ -156,6 +174,18 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
       this.results = r;
       this.refreshResultsView();
     });
+
+    this.stateService.memorySupport$.pipe(takeUntil(this.destroy$))
+        .subscribe(memorySupport => {
+          this.memorySupport = memorySupport;
+        });
+  }
+
+  /** Label under the progress bar, which changes during the settle pause. */
+  get progressText(): string {
+    return this.isSettlingMemories ?
+        'Waiting for saved memories to settle...' :
+        `Evaluating... (${this.completedRows} / ${this.totalRows})`;
   }
 
   /**
@@ -279,18 +309,16 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
    */
   async startEvaluation(event: {file: File, rows: CSVRow[]}) {
     if (this.isProcessing) return;
-    const runId = ++this.currentRunId;
-    this.errorMessage = null;
-    this.isProcessing = true;
-    this.progress = 0;
-    this.totalRows = event.rows.length;
-    this.completedRows = 0;
-    this.step = 3;
-    this.stateService.setResults([]);
-    this.cdr.detectChanges();
-    const results: ResultRow[] = [];
 
-    if (this.totalRows === 0) return;
+    // Checked on every file, not just files with seed rows: a misspelt phase
+    // value is precisely the case where the run would otherwise succeed while
+    // silently testing something the author did not write.
+    const memoryError = validateMemoryRows(event.rows);
+    if (memoryError) {
+      this.errorMessage = memoryError;
+      this.cdr.detectChanges();
+      return;
+    }
 
     // Rows sharing a conversation_id are turns of one multi-turn
     // conversation and must run sequentially against the same Assistant
@@ -299,8 +327,31 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     // single-turn queries, each its own one-row "conversation" below, and
     // continue to run freely across the worker pool as before.
     const conversations = this.groupIntoConversations(event.rows);
+    const seedConversations = conversations.filter(isSeedConversation);
+    const mainConversations =
+        conversations.filter(turns => !isSeedConversation(turns));
 
-    const tasks = conversations.map(turns => async () => {
+    if (seedConversations.length > 0 &&
+        !this.approveMemoryRun(event, seedConversations)) {
+      return;
+    }
+
+    const runId = ++this.currentRunId;
+    const memorySupport = this.memorySupport;
+    this.errorMessage = null;
+    this.isProcessing = true;
+    this.progress = 0;
+    this.totalRows = event.rows.length;
+    this.completedRows = 0;
+    this.seededQueries = [];
+    this.step = 3;
+    this.stateService.setResults([]);
+    this.cdr.detectChanges();
+    const results: ResultRow[] = [];
+
+    if (this.totalRows === 0) return;
+
+    const runConversation = (turns: CSVRow[]) => async () => {
       const isMultiTurn = turns.length > 1;
       let session: string|undefined;
 
@@ -317,10 +368,13 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
               `Scoring failed for some rows: ${result.scoreError}`;
         }
 
+        const memoryPhase = memoryPhaseOf(row);
         results.push({
           ...result,
           conversationId: isMultiTurn ? row.conversation_id : undefined,
           turn: isMultiTurn ? (Number(row.turn) || i + 1) : undefined,
+          memoryPhase,
+          memorySupport: memoryPhase ? memorySupport : undefined,
         });
         this.stateService.setResults(results);
         this.completedRows++;
@@ -328,8 +382,110 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
             Math.round((this.completedRows / this.totalRows) * 100);
         this.cdr.detectChanges();
       }
-    });
+    };
 
+    // Seed rows run first, one at a time, and every one of them finishes
+    // before any other row starts. Saved memories are account-wide state
+    // rather than per-session context, so seeding concurrently with the rows
+    // that read it would make each run depend on which request happened to
+    // land first.
+    //
+    // The whole phase is skipped when nothing seeds, rather than awaited on an
+    // empty list, so that an ordinary file still dispatches its first requests
+    // synchronously within this call as it did before phases existed.
+    if (seedConversations.length > 0) {
+      await this.runPool(seedConversations.map(runConversation), 1);
+
+      if (mainConversations.length > 0 && runId === this.currentRunId &&
+          this.isProcessing) {
+        await this.settleMemories();
+      }
+    }
+
+    if (runId === this.currentRunId && this.isProcessing) {
+      await this.runPool(
+          mainConversations.map(runConversation),
+          MAX_CONCURRENT_REQUESTS_FOR_EVALUATION);
+    }
+
+    if (this.isProcessing) {
+      this.progress = 100;
+    }
+    if (runId === this.currentRunId) {
+      this.seededQueries =
+          results.filter(row => row.memoryPhase === 'seed')
+              .map(row => row.query);
+      this.isProcessing = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  /**
+   * Decides whether a run that writes saved memories may start.
+   *
+   * Unlike every other run, this one changes state that outlives it on the
+   * authenticated account, so it asks first. Confirmation is remembered for
+   * the rest of the session: the teardown notice after each run is what keeps
+   * the tester informed from then on.
+   * @param event The upload being run, held for replay after confirmation.
+   * @param seedConversations The conversations that will seed memories.
+   * @returns True to start now, false when refused or awaiting confirmation.
+   */
+  private approveMemoryRun(
+      event: {file: File, rows: CSVRow[]},
+      seedConversations: CSVRow[][]): boolean {
+    if (this.memorySupport === 'off') {
+      this.errorMessage =
+          'This engine reports saved memories (personalization-memory) as ' +
+          'disabled. Seed rows would save nothing and recall rows would be ' +
+          'scored against an empty memory, so the run is refused. Enable the ' +
+          'feature on the engine, or remove the phase column from the file.';
+      this.cdr.detectChanges();
+      return false;
+    }
+
+    if (this.memoryRunConfirmed) {
+      return true;
+    }
+
+    this.pendingMemoryRun = event;
+    this.pendingSeedQueries = seedConversations.flat().map(row => row.query);
+    this.showMemoryConsentModal = true;
+    this.cdr.detectChanges();
+    return false;
+  }
+
+  /** Accepts the seeding warning and starts the run that was held back. */
+  confirmMemoryRun() {
+    const event = this.pendingMemoryRun;
+    this.showMemoryConsentModal = false;
+    this.pendingMemoryRun = null;
+    if (!event) return;
+    this.memoryRunConfirmed = true;
+    this.startEvaluation(event);
+  }
+
+  /** Declines the seeding warning, leaving the account untouched. */
+  cancelMemoryRun() {
+    this.showMemoryConsentModal = false;
+    this.pendingMemoryRun = null;
+    this.pendingSeedQueries = [];
+    this.cdr.detectChanges();
+  }
+
+  /** Dismisses the post-run teardown notice. */
+  dismissTeardownNotice() {
+    this.seededQueries = [];
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * Runs tasks with a bounded number of them in flight.
+   * @param tasks The work, each item independent of the others.
+   * @param concurrency How many may run at once.
+   */
+  private async runPool(
+      tasks: Array<() => Promise<void>>, concurrency: number): Promise<void> {
     let index = 0;
     const worker = async () => {
       while (index < tasks.length) {
@@ -339,18 +495,37 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     };
 
     const workers = [];
-    for (let i = 0; i < Math.min(MAX_CONCURRENT_REQUESTS_FOR_EVALUATION, tasks.length); i++) {
+    for (let i = 0; i < Math.min(concurrency, tasks.length); i++) {
       workers.push(worker());
     }
     await Promise.all(workers);
+  }
 
-    if (this.isProcessing) {
-      this.progress = 100;
+  /**
+   * Pauses between the seed phase and the rest of the run.
+   *
+   * A memory is saved asynchronously, after the turn that produced it has
+   * finished streaming. A recall query sent the instant the seed turn returns
+   * can miss a memory that was in fact saved correctly, which would show up as
+   * a product failure rather than as a race in the harness.
+   */
+  private settleMemories(): Promise<void> {
+    const delay =
+        this.stateService.getCurrentConfig().memorySettleMs ??
+        DEFAULT_MEMORY_SETTLE_MS;
+    if (delay <= 0) {
+      return Promise.resolve();
     }
-    if (runId === this.currentRunId) {
-      this.isProcessing = false;
-      this.cdr.detectChanges();
-    }
+
+    this.isSettlingMemories = true;
+    this.cdr.detectChanges();
+    return new Promise<void>(resolve => {
+      setTimeout(() => {
+        this.isSettlingMemories = false;
+        this.cdr.detectChanges();
+        resolve();
+      }, delay);
+    });
   }
 
   /** Gets the scoring strategies selected in the configuration, in run order. */
