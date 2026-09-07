@@ -22,7 +22,7 @@ import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig} from '../../models/app-config.model';
 import {CSVRow} from '../../models/csv-row.model';
-import {DEFAULT_MEMORY_SETTLE_MS, MemorySupport, isSeedConversation, memoryPhaseOf, validateMemoryRows} from '../../models/memory.model';
+import {MEMORY_SETTLE_MS, MemorySupport, isSeedConversation, memoryPhaseOf, validateMemoryRows} from '../../models/memory.model';
 import {ResultRow} from '../../models/result-row.model';
 import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
 import {ScorerRegistry} from '../../scoring/scorer.registry';
@@ -514,13 +514,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
    *     it no longer owns the progress label by the time it fires.
    */
   private settleMemories(runId: number): Promise<void> {
-    const delay =
-        this.stateService.getCurrentConfig().memorySettleMs ??
-        DEFAULT_MEMORY_SETTLE_MS;
-    if (delay <= 0) {
-      return Promise.resolve();
-    }
-
     this.isSettlingMemories = true;
     this.cdr.detectChanges();
     return new Promise<void>(resolve => {
@@ -532,7 +525,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         }
         resolve();
-      }, delay);
+      }, MEMORY_SETTLE_MS);
     });
   }
 

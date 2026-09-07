@@ -22,7 +22,7 @@ import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig, CollectionComponent, DataStoreComponent, Engine, WidgetConfigResponse} from '../../../models/app-config.model';
-import {DEFAULT_MEMORY_SETTLE_MS, MemorySupport, readMemorySupport} from '../../../models/memory.model';
+import {MemorySupport, readMemorySupport} from '../../../models/memory.model';
 import {Scorer} from '../../../scoring/scorer';
 import {ScorerRegistry} from '../../../scoring/scorer.registry';
 import {AuthService} from '../../../services/auth.service';
@@ -86,10 +86,6 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   isDropdownOpen = false;
   connectorSearchQuery = '';
   connectors: ConnectorOption[] = [];
-
-  /** The selected engine's saved-memory feature state, as last detected. */
-  memorySupport: MemorySupport = 'unknown';
-  readonly defaultMemorySettleMs = DEFAULT_MEMORY_SETTLE_MS;
 
   constructor(
       private readonly stateService: StateService,
@@ -303,27 +299,16 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Publishes the detected saved-memory state for the run to consult. */
-  private setMemorySupport(memorySupport: MemorySupport) {
-    this.memorySupport = memorySupport;
-    this.stateService.setMemorySupport(memorySupport);
-  }
-
-  /** The settle delay to show in the form, filled in with its default. */
-  getMemorySettleMs(): number {
-    return this.config.memorySettleMs ?? DEFAULT_MEMORY_SETTLE_MS;
-  }
-
   /**
-   * Stores an edited settle delay. Non-numeric or negative input falls back to
-   * the default rather than to zero, which would silently remove the barrier
-   * that makes a memory run meaningful.
+   * Publishes the detected saved-memory state for the run to consult.
+   *
+   * Deliberately not surfaced in the form: it is a property of the engine
+   * rather than something to configure, and it only matters for query sets
+   * that use the `phase` column. The run reports it at the point of use
+   * instead, by refusing to seed against an engine that reports it off.
    */
-  onMemorySettleMsChange(value: string) {
-    const parsed = Number(value);
-    this.config.memorySettleMs =
-        Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_MEMORY_SETTLE_MS;
-    this.onConfigChange();
+  private setMemorySupport(memorySupport: MemorySupport) {
+    this.stateService.setMemorySupport(memorySupport);
   }
 
   /**

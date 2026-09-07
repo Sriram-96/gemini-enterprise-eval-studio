@@ -51,8 +51,17 @@ export type MemorySupport = 'on'|'off'|'unknown';
  */
 export type MemoryPhase = 'seed'|'recall';
 
-/** Pause between the seed phase and the rest of the run, in milliseconds. */
-export const DEFAULT_MEMORY_SETTLE_MS = 5000;
+/**
+ * Pause between the seed phase and the rest of the run, in milliseconds.
+ *
+ * Gemini Enterprise saves a memory asynchronously after the turn that produced
+ * it, so a recall query issued immediately can miss it. There is no API to poll
+ * for the write having landed, which is why this is a fixed wait rather than a
+ * condition: five seconds is long enough to cover the lag in practice and short
+ * enough not to dominate a run, and it is not worth asking an author to guess a
+ * number for a delay they cannot observe.
+ */
+export const MEMORY_SETTLE_MS = 5000;
 
 /**
  * Reads the engine's saved-memory feature state off a widget config response.

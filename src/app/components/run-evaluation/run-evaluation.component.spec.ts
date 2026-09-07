@@ -19,7 +19,7 @@ import {TestBed, fakeAsync, tick} from '@angular/core/testing';
 import {BehaviorSubject, of} from 'rxjs';
 
 import {AppConfig} from '../../models/app-config.model';
-import {DEFAULT_MEMORY_SETTLE_MS, MemorySupport} from '../../models/memory.model';
+import {MEMORY_SETTLE_MS, MemorySupport} from '../../models/memory.model';
 import {ResultRow} from '../../models/result-row.model';
 import {ScorerRunResult} from '../../scoring/scorer';
 import {AuthService} from '../../services/auth.service';
@@ -489,32 +489,11 @@ describe('RunEvaluationComponent', () => {
          expect(component.progressText)
              .toBe('Waiting for saved memories to settle...');
 
-         tick(DEFAULT_MEMORY_SETTLE_MS);
+         tick(MEMORY_SETTLE_MS);
 
          expect(started).toEqual(['seed1', 'seed2', 'recall']);
          expect(component.isSettlingMemories).toBeFalse();
          expect(component.isProcessing).toBeFalse();
-       }));
-
-    it('should honour a configured settle delay', fakeAsync(() => {
-         configSubject.next({...configSubject.value, memorySettleMs: 250});
-         const component = setUp();
-         const {started} = recordOrder();
-
-         component.startEvaluation({
-           file: new File([], 'test.csv'),
-           rows: [
-             {query: 'seed1', golden: 'ok', phase: 'seed'},
-             {query: 'recall', golden: 'metric', phase: 'recall'},
-           ]
-         });
-         tick();
-         component.confirmMemoryRun();
-         tick();
-
-         expect(started).toEqual(['seed1']);
-         tick(250);
-         expect(started).toEqual(['seed1', 'recall']);
        }));
 
     it('should start the recall row in a fresh session rather than the seed row\'s',
@@ -546,7 +525,7 @@ describe('RunEvaluationComponent', () => {
          tick();
          component.confirmMemoryRun();
          tick();
-         tick(DEFAULT_MEMORY_SETTLE_MS);
+         tick(MEMORY_SETTLE_MS);
 
          // A recall row answered from the seed row's own session would prove
          // nothing about saved memories, only about within-session context.
@@ -569,7 +548,7 @@ describe('RunEvaluationComponent', () => {
          tick();
          component.confirmMemoryRun();
          tick();
-         tick(DEFAULT_MEMORY_SETTLE_MS);
+         tick(MEMORY_SETTLE_MS);
 
          const byQuery = new Map(resultsSubject.value.map(r => [r.query, r]));
          expect(byQuery.get('seed1')!.memoryPhase).toBe('seed');
@@ -650,7 +629,7 @@ describe('RunEvaluationComponent', () => {
          tick();
          component.confirmMemoryRun();
          tick();
-         tick(DEFAULT_MEMORY_SETTLE_MS);
+         tick(MEMORY_SETTLE_MS);
 
          // Nothing can delete these through the API, so the run has to say
          // exactly what it left on the account.
@@ -671,7 +650,6 @@ describe('RunEvaluationComponent', () => {
 
          // Run A reaches its settle pause and is then stopped. Its timer is
          // still pending and will fire long after the run is gone.
-         configSubject.next({...configSubject.value, memorySettleMs: 100});
          component.startEvaluation(
              {file: new File([], 'a.csv'), rows: seedThenRecall});
          tick();
@@ -680,9 +658,10 @@ describe('RunEvaluationComponent', () => {
          expect(component.isSettlingMemories).toBeTrue();
          component.stopEvaluation();
 
-         // Run B starts and reaches a settle pause of its own, one that
-         // outlasts run A's pending timer.
-         configSubject.next({...configSubject.value, memorySettleMs: 500});
+         // The tester takes a moment before restarting, so run B's pause is
+         // the same length but ends later than run A's pending timer.
+         const restartGap = 1000;
+         tick(restartGap);
          component.startEvaluation(
              {file: new File([], 'b.csv'), rows: seedThenRecall});
          tick();
@@ -690,13 +669,13 @@ describe('RunEvaluationComponent', () => {
 
          // Run A's timer fires here. It no longer owns the label, so run B
          // must still read as settling.
-         tick(100);
+         tick(MEMORY_SETTLE_MS - restartGap);
          expect(component.isSettlingMemories).toBeTrue();
          expect(component.progressText)
              .toBe('Waiting for saved memories to settle...');
 
          // Run B's own timer then clears it and the run finishes normally.
-         tick(400);
+         tick(restartGap);
          expect(component.isSettlingMemories).toBeFalse();
          expect(component.isProcessing).toBeFalse();
        }));

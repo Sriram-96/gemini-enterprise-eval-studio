@@ -32,13 +32,6 @@ export interface AppConfig {
   autoRaterInstruction: string;
   selectedDataStores: string[];
   enableWebSearch: boolean;
-  /**
-   * How long to pause between the seed phase and the rest of a memory run, in
-   * milliseconds. Gemini Enterprise saves a memory asynchronously after the
-   * turn that produced it, so a recall query issued immediately can miss it.
-   * Unset falls back to DEFAULT_MEMORY_SETTLE_MS. See models/memory.model.ts.
-   */
-  memorySettleMs?: number;
   // Restored for no-auth mode
   gCloudToken?: string;
 }

@@ -180,10 +180,11 @@ seeding concurrently with the rows that read them would make each run depend on
 which request happened to land first. Recall rows and ordinary rows then run
 together across the usual worker pool.
 
-Between the two phases the run pauses for the **memory settle delay** set in the
-configuration form (5 s by default). A memory is saved asynchronously after the
-turn that produced it finishes streaming, so a recall query sent immediately can
-miss a memory that was in fact saved correctly.
+Between the two phases the run pauses for five seconds. A memory is saved
+asynchronously after the turn that produced it finishes streaming, so a recall
+query sent immediately can miss a memory that was in fact saved correctly. The
+pause is fixed rather than configurable: there is no API to poll for the write
+having landed, so there is nothing an author could usefully tune it against.
 
 Three rules are checked before anything is sent, and a file that breaks any of
 them is refused rather than run:
@@ -201,11 +202,12 @@ saved-memory feature state so a run stays interpretable later.
 
 ### Before you rely on the results
 
--   **Check the feature is on.** The configuration form reads
-    `personalization-memory` off the engine and shows Enabled, Disabled, or Not
-    reported. A run with seed rows is refused outright against an engine that
-    reports the feature disabled. *Not reported* means the engine did not say
-    either way — the run proceeds, but a failing recall row is inconclusive.
+-   **Check the feature is on.** Selecting an engine reads
+    `personalization-memory` off it, and a run with seed rows is refused
+    outright against an engine that reports the feature disabled. An engine that
+    reports neither way is not thereby disabled, so the run proceeds and the
+    confirmation says so — but a failing recall row is then inconclusive. Either
+    way the detected state is recorded on every memory row of the results.
 -   **Include a positive control.** A recall row can fail because the answer was
     wrong *or* because the memory was never saved, and the two are
     indistinguishable from the score alone. Pair each recall row with one whose
