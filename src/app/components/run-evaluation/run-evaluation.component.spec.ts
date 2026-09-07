@@ -660,6 +660,47 @@ describe('RunEvaluationComponent', () => {
          expect(component.seededQueries).toEqual([]);
        }));
 
+    it('should not let a stopped run\'s settle timer clear the label of the run that replaced it',
+       fakeAsync(() => {
+         const component = setUp();
+         recordOrder();
+         const seedThenRecall = [
+           {query: 'seed1', golden: 'ok', phase: 'seed'},
+           {query: 'recall', golden: 'm', phase: 'recall'},
+         ];
+
+         // Run A reaches its settle pause and is then stopped. Its timer is
+         // still pending and will fire long after the run is gone.
+         configSubject.next({...configSubject.value, memorySettleMs: 100});
+         component.startEvaluation(
+             {file: new File([], 'a.csv'), rows: seedThenRecall});
+         tick();
+         component.confirmMemoryRun();
+         tick();
+         expect(component.isSettlingMemories).toBeTrue();
+         component.stopEvaluation();
+
+         // Run B starts and reaches a settle pause of its own, one that
+         // outlasts run A's pending timer.
+         configSubject.next({...configSubject.value, memorySettleMs: 500});
+         component.startEvaluation(
+             {file: new File([], 'b.csv'), rows: seedThenRecall});
+         tick();
+         expect(component.isSettlingMemories).toBeTrue();
+
+         // Run A's timer fires here. It no longer owns the label, so run B
+         // must still read as settling.
+         tick(100);
+         expect(component.isSettlingMemories).toBeTrue();
+         expect(component.progressText)
+             .toBe('Waiting for saved memories to settle...');
+
+         // Run B's own timer then clears it and the run finishes normally.
+         tick(400);
+         expect(component.isSettlingMemories).toBeFalse();
+         expect(component.isProcessing).toBeFalse();
+       }));
+
     it('should leave a file without a phase column entirely unaffected', fakeAsync(() => {
          const component = setUp();
          const {started} = recordOrder();

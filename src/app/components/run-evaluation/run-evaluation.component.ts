@@ -344,6 +344,8 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     this.totalRows = event.rows.length;
     this.completedRows = 0;
     this.seededQueries = [];
+    // A run stopped mid-pause leaves this set until its timer fires.
+    this.isSettlingMemories = false;
     this.step = 3;
     this.stateService.setResults([]);
     this.cdr.detectChanges();
@@ -398,7 +400,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
 
       if (mainConversations.length > 0 && runId === this.currentRunId &&
           this.isProcessing) {
-        await this.settleMemories();
+        await this.settleMemories(runId);
       }
     }
 
@@ -508,8 +510,10 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
    * finished streaming. A recall query sent the instant the seed turn returns
    * can miss a memory that was in fact saved correctly, which would show up as
    * a product failure rather than as a race in the harness.
+   * @param runId The run being paused, so a stopped run's timer can tell that
+   *     it no longer owns the progress label by the time it fires.
    */
-  private settleMemories(): Promise<void> {
+  private settleMemories(runId: number): Promise<void> {
     const delay =
         this.stateService.getCurrentConfig().memorySettleMs ??
         DEFAULT_MEMORY_SETTLE_MS;
@@ -521,8 +525,12 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
     return new Promise<void>(resolve => {
       setTimeout(() => {
-        this.isSettlingMemories = false;
-        this.cdr.detectChanges();
+        // The timer of a stopped run outlives it, so it must not clear the
+        // label of whichever run is settling by then.
+        if (runId === this.currentRunId) {
+          this.isSettlingMemories = false;
+          this.cdr.detectChanges();
+        }
         resolve();
       }, delay);
     });

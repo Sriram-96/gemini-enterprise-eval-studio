@@ -185,9 +185,11 @@ configuration form (5 s by default). A memory is saved asynchronously after the
 turn that produced it finishes streaming, so a recall query sent immediately can
 miss a memory that was in fact saved correctly.
 
-Two rules are enforced at upload, and a file that breaks either is refused
-rather than run:
+Three rules are checked before anything is sent, and a file that breaks any of
+them is refused rather than run:
 
+-   A `phase` value must be `seed`, `recall`, or empty. A typo would otherwise
+    run silently as an ordinary row.
 -   A `recall` row cannot carry a `conversation_id`. It has to open a new chat;
     threading it onto the seed turn would test within-session context, which is
     a different feature.
