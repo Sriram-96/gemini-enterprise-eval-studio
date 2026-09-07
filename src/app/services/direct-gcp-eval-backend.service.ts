@@ -64,6 +64,21 @@ export class DirectGcpEvalBackendService extends EvalBackendService {
     });
   }
 
+  override async callCountTokens(request: ScoreRequest): Promise<Response> {
+    const {body, model, projectId} = request;
+    const url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/${model}:countTokens`;
+
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.getGCloudToken()}`,
+        'x-goog-user-project': projectId,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+  }
+
   override async fetchEngines(projectId: string, region: string, config: AppConfig): Promise<Engine[]> {
     const baseUrl = region === 'global'
       ? 'discoveryengine.googleapis.com'

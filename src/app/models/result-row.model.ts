@@ -70,6 +70,19 @@ export interface ResultRow {
   /** Time to Last Token in seconds (s). */
   ttlt: number;
   /**
+   * Time Per Output Token in milliseconds per token (ms/token): the average
+   * time to generate each output token after the first, computed as
+   * (ttlt - ttft) / (outputTokens - 1). Note the unit differs from the
+   * seconds-based latency fields above.
+   *
+   * streamAssist returns no token count, so the output tokens are counted from
+   * the produced text (thoughts + answer) with Vertex `countTokens`. It is 0
+   * when that count is unavailable or one token or fewer was produced, so a
+   * missing value reads as an honest 0 rather than a misleading estimate.
+   * Always set, like the latency fields, so the CSV export keeps the column.
+   */
+  tpot: number;
+  /**
    * Score of the primary scorer, meaning the first one in the configured
    * selection. Always present so the results table and the Compare tab have a
    * single score to work with, however many scorers ran.
