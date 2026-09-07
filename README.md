@@ -33,9 +33,10 @@ violate data privacy policies.
     the data stores and connectors they came from, the tools it ran and its
     thinking, so a tester can confirm *how* an answer was reached and not only
     that it sounded plausible. See [Verifying Retrieval](#verifying-retrieval).
--   **Saved Memory Evaluation**: An optional `phase` column seeds memories in
-    one set of rows and reads them back from fresh sessions in another, so
-    personalization can be tested rather than assumed. See
+-   **Saved Memory Evaluation**: An optional `phase` column clears the account's
+    memories, seeds new ones in one set of rows and reads them back from fresh
+    sessions in another, so personalization can be tested rather than assumed —
+    and tested the same way twice. See
     [Evaluating Saved Memories](#evaluating-saved-memories).
 
 ## Data Privacy and Governance
@@ -61,9 +62,10 @@ architecture:
 5.  **Saved Memories (the one exception to statelessness)**: A query set using
     the optional `phase` column deliberately asks the assistant to remember
     things, and anything it saves persists on the signed-in user's account
-    after the run ends, inside your tenant. No API exists to delete it, so
-    teardown is manual. Runs that seed memories require explicit confirmation
-    and report what they left behind. See
+    after the run ends, inside your tenant. A `reset` row asks it to delete
+    saved memories, which is likewise not limited to this run and cannot be
+    undone. Runs that reset or seed memories require explicit confirmation,
+    listing both sets of queries first, and report what they left behind. See
     [Evaluating Saved Memories](#evaluating-saved-memories).
 
 ## Prerequisites & Setup
@@ -166,31 +168,34 @@ unrelated chats. Evaluating that requires a query set that writes a memory and
 then reads it back from a *different* session, which is what the optional
 `phase` column does.
 
-Add `phase` to your CSV and mark each row `seed`, `recall`, or leave it blank:
+Add `phase` to your CSV and mark each row `reset`, `seed`, `recall`, or leave it
+blank:
 
 | query | golden | phase |
 | --- | --- | --- |
+| Forget everything you have saved about me. | Confirms the memories are deleted. | `reset` |
 | Remember that I always want distances in kilometres. | Acknowledges the preference. | `seed` |
 | How far is it from the depot to the port? | An answer in kilometres, not miles. | `recall` |
 | What are the store opening hours? | The published hours. | |
 
-**Seed rows all run first, one at a time, before any other row in the file.**
-Saved memories are account-wide state rather than per-session context, so
-seeding concurrently with the rows that read them would make each run depend on
-which request happened to land first. Recall rows and ordinary rows then run
-together across the usual worker pool.
+**Reset rows run first, then seed rows, one at a time, before any other row in
+the file.** Saved memories are account-wide state rather than per-session
+context, so clearing or seeding concurrently with the rows that read them would
+make each run depend on which request happened to land first. Recall rows and
+ordinary rows then run together across the usual worker pool.
 
-Between the two phases the run pauses for five seconds. A memory is saved
-asynchronously after the turn that produced it finishes streaming, so a recall
-query sent immediately can miss a memory that was in fact saved correctly. The
-pause is fixed rather than configurable: there is no API to poll for the write
-having landed, so there is nothing an author could usefully tune it against.
+After each of those phases the run pauses for five seconds. A memory is written
+asynchronously after the turn that produced it finishes streaming, and a
+deletion lands the same way, so a query sent immediately can miss a memory that
+was in fact saved, or read one that was in fact deleted. The pause is fixed
+rather than configurable: there is no API to poll for the write having landed,
+so there is nothing an author could usefully tune it against.
 
 Three rules are checked before anything is sent, and a file that breaks any of
 them is refused rather than run:
 
--   A `phase` value must be `seed`, `recall`, or empty. A typo would otherwise
-    run silently as an ordinary row.
+-   A `phase` value must be `reset`, `seed`, `recall`, or empty. A typo would
+    otherwise run silently as an ordinary row.
 -   A `recall` row cannot carry a `conversation_id`. It has to open a new chat;
     threading it onto the seed turn would test within-session context, which is
     a different feature.
@@ -199,6 +204,13 @@ them is refused rather than run:
 
 Results gain a `Phase` column, and memory rows also record the engine's
 saved-memory feature state so a run stays interpretable later.
+
+[testdata/memory-fixtures/](testdata/memory-fixtures/) is a worked example: 27
+rows that clear the account, seed seven memories — one of them correcting an
+earlier value — read them back from fresh sessions, and check that nothing was
+saved which the seeding turn asked not to be. It needs no documents indexed,
+only an engine with the feature on and an account whose memories you are willing
+to delete.
 
 ### Before you rely on the results
 
@@ -214,22 +226,37 @@ saved-memory feature state so a run stays interpretable later.
     answer does not depend on the memory, so a whole-file failure is
     recognisable as a seeding problem.
 
-### Teardown is manual
+### Repeating a run, and cleaning up after it
 
-There is **no API to delete a memory** the assistant saved. The studio can seed
-memories by holding the conversation that creates them, but it cannot remove
-them afterwards, so:
+Nothing isolates one run from the next. A memory is keyed to the **identity
+behind the access token**, not to the session: a new access token for the same
+user, a new `userPseudoId`, or no session at all all read the same store. So the
+second run of a query set starts with everything the first one saved, and
+leftover state does not announce itself — a recall row can pass on last run's
+memory whether or not this run seeded anything.
 
--   A run with seed rows asks for confirmation first and lists exactly what it
-    will attempt to save.
--   After the run, a notice lists the seed queries so you can clear them by hand
-    in Gemini Enterprise (**Settings › Personalization › Memories**).
--   **Clear them before re-running the same file.** Re-running without clearing
-    saves near-duplicate memories and can change what later runs recall.
+There is also **no API to delete a memory**. What there is, is an assistant that
+honours the request in conversation, which is what the `reset` phase uses: a
+`reset` row is an ordinary turn asking it to forget, sent before anything is
+seeded. Starting a run by clearing is deliberate — a run that is stopped or
+crashes never reaches a teardown step, but it does reach the next run's reset.
 
-Because memories are saved against the signed-in user, prefer a dedicated test
-identity over a real user account, and avoid seeding anything you would not want
-persisted on that account.
+Because both phases change state that outlives the run:
+
+-   A run with `reset` or `seed` rows asks for confirmation first, listing the
+    reset queries and the seed queries separately before either is sent.
+-   **A reset row is not limited to memories this tool created.** It asks the
+    assistant to delete what it holds for the signed-in user, and it cannot be
+    undone. Prefer a dedicated test identity over a real user account.
+-   After the run, a notice lists the seed queries. Re-running the same file
+    clears them; otherwise remove them by hand in Gemini Enterprise
+    (**Settings › Personalization › Memories**).
+-   Verify a reset rather than assuming it. Making the last reset row
+    `List everything you have saved about me.` puts the receipt in the results,
+    where a run that started dirty is visible.
+
+Avoid seeding anything you would not want persisted on that account: until the
+next reset, it stays there.
 
 ## Reproducing reported bugs
 

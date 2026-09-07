@@ -22,7 +22,7 @@ import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig} from '../../models/app-config.model';
 import {CSVRow} from '../../models/csv-row.model';
-import {MEMORY_SETTLE_MS, MemorySupport, isSeedConversation, memoryPhaseOf, validateMemoryRows} from '../../models/memory.model';
+import {MEMORY_SETTLE_MS, MemorySupport, isSeedConversation, memoryPhaseOf, orderedPhaseOf, validateMemoryRows} from '../../models/memory.model';
 import {ResultRow} from '../../models/result-row.model';
 import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
 import {ScorerRegistry} from '../../scoring/scorer.registry';
@@ -102,6 +102,8 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   /** Whether the run is paused between the seed phase and the rest. */
   isSettlingMemories = false;
   showMemoryConsentModal = false;
+  /** The reset queries awaiting confirmation, listed in the consent modal. */
+  pendingResetQueries: string[] = [];
   /** The seed queries awaiting confirmation, listed in the consent modal. */
   pendingSeedQueries: string[] = [];
   /**
@@ -327,12 +329,14 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     // single-turn queries, each its own one-row "conversation" below, and
     // continue to run freely across the worker pool as before.
     const conversations = this.groupIntoConversations(event.rows);
+    const resetConversations =
+        conversations.filter(turns => orderedPhaseOf(turns) === 'reset');
     const seedConversations = conversations.filter(isSeedConversation);
     const mainConversations =
-        conversations.filter(turns => !isSeedConversation(turns));
+        conversations.filter(turns => !orderedPhaseOf(turns));
 
-    if (seedConversations.length > 0 &&
-        !this.approveMemoryRun(event, seedConversations)) {
+    if ((resetConversations.length > 0 || seedConversations.length > 0) &&
+        !this.approveMemoryRun(event, resetConversations, seedConversations)) {
       return;
     }
 
@@ -386,19 +390,27 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
       }
     };
 
-    // Seed rows run first, one at a time, and every one of them finishes
-    // before any other row starts. Saved memories are account-wide state
-    // rather than per-session context, so seeding concurrently with the rows
-    // that read it would make each run depend on which request happened to
-    // land first.
+    // Reset rows run first and seed rows next, one at a time, and each phase
+    // finishes before the next row starts. Saved memories are account-wide
+    // state rather than per-session context, so clearing or seeding
+    // concurrently with the rows that read them would make each run depend on
+    // which request happened to land first.
     //
-    // The whole phase is skipped when nothing seeds, rather than awaited on an
-    // empty list, so that an ordinary file still dispatches its first requests
-    // synchronously within this call as it did before phases existed.
-    if (seedConversations.length > 0) {
-      await this.runPool(seedConversations.map(runConversation), 1);
+    // An empty phase is skipped rather than awaited on an empty list, so that
+    // an ordinary file still dispatches its first requests synchronously
+    // within this call as it did before phases existed.
+    const orderedPhases = [resetConversations, seedConversations];
+    for (let i = 0; i < orderedPhases.length; i++) {
+      if (orderedPhases[i].length === 0) continue;
+      if (runId !== this.currentRunId || !this.isProcessing) break;
 
-      if (mainConversations.length > 0 && runId === this.currentRunId &&
+      await this.runPool(orderedPhases[i].map(runConversation), 1);
+
+      // Both a deletion and a save land asynchronously, so whatever runs next
+      // has to wait for this phase's writes rather than race them.
+      const remaining =
+          [...orderedPhases.slice(i + 1), mainConversations].flat();
+      if (remaining.length > 0 && runId === this.currentRunId &&
           this.isProcessing) {
         await this.settleMemories(runId);
       }
@@ -423,18 +435,23 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Decides whether a run that writes saved memories may start.
+   * Decides whether a run that changes saved memories may start.
    *
    * Unlike every other run, this one changes state that outlives it on the
-   * authenticated account, so it asks first. Confirmation is remembered for
-   * the rest of the session: the teardown notice after each run is what keeps
-   * the tester informed from then on.
+   * authenticated account, so it asks first. Reset rows are the reason the
+   * modal lists both phases separately: a seed row adds something the tester
+   * can review afterwards, but a reset row asks the assistant to delete what
+   * is already there, including memories this tool never created.
+   *
+   * Confirmation is remembered for the rest of the session: the teardown
+   * notice after each run is what keeps the tester informed from then on.
    * @param event The upload being run, held for replay after confirmation.
+   * @param resetConversations The conversations that will clear memories.
    * @param seedConversations The conversations that will seed memories.
    * @returns True to start now, false when refused or awaiting confirmation.
    */
   private approveMemoryRun(
-      event: {file: File, rows: CSVRow[]},
+      event: {file: File, rows: CSVRow[]}, resetConversations: CSVRow[][],
       seedConversations: CSVRow[][]): boolean {
     if (this.memorySupport === 'off') {
       this.errorMessage =
@@ -451,6 +468,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     }
 
     this.pendingMemoryRun = event;
+    this.pendingResetQueries = resetConversations.flat().map(row => row.query);
     this.pendingSeedQueries = seedConversations.flat().map(row => row.query);
     this.showMemoryConsentModal = true;
     this.cdr.detectChanges();
@@ -471,6 +489,7 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   cancelMemoryRun() {
     this.showMemoryConsentModal = false;
     this.pendingMemoryRun = null;
+    this.pendingResetQueries = [];
     this.pendingSeedQueries = [];
     this.cdr.detectChanges();
   }
@@ -504,12 +523,13 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Pauses between the seed phase and the rest of the run.
+   * Pauses between a sequential phase and whatever runs after it.
    *
-   * A memory is saved asynchronously, after the turn that produced it has
-   * finished streaming. A recall query sent the instant the seed turn returns
-   * can miss a memory that was in fact saved correctly, which would show up as
-   * a product failure rather than as a race in the harness.
+   * A memory is written asynchronously, after the turn that produced it has
+   * finished streaming, and a deletion lands the same way. A query sent the
+   * instant the phase returns can therefore miss a memory that was in fact
+   * saved, or read one that was in fact deleted, which would show up as a
+   * product failure rather than as a race in the harness.
    * @param runId The run being paused, so a stopped run's timer can tell that
    *     it no longer owns the progress label by the time it fires.
    */

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {isSeedConversation, memoryPhaseOf, readMemorySupport, validateMemoryRows} from './memory.model';
+import {isSeedConversation, memoryPhaseOf, orderedPhaseOf, readMemorySupport, validateMemoryRows} from './memory.model';
 
 describe('memory.model', () => {
   describe('readMemorySupport', () => {
@@ -53,11 +53,13 @@ describe('memory.model', () => {
   });
 
   describe('memoryPhaseOf', () => {
-    it('should read seed and recall, ignoring case and surrounding space', () => {
+    it('should read every phase, ignoring case and surrounding space', () => {
       expect(memoryPhaseOf({query: 'q', golden: 'g', phase: 'seed'})).toBe('seed');
       expect(memoryPhaseOf({query: 'q', golden: 'g', phase: '  Recall '}))
           .toBe('recall');
       expect(memoryPhaseOf({query: 'q', golden: 'g', phase: 'SEED'})).toBe('seed');
+      expect(memoryPhaseOf({query: 'q', golden: 'g', phase: ' Reset '}))
+          .toBe('reset');
     });
 
     it('should return undefined for an ordinary row', () => {
@@ -65,6 +67,23 @@ describe('memory.model', () => {
       expect(memoryPhaseOf({query: 'q', golden: 'g', phase: ''})).toBeUndefined();
       expect(memoryPhaseOf({query: 'q', golden: 'g', phase: '   '}))
           .toBeUndefined();
+    });
+  });
+
+  describe('orderedPhaseOf', () => {
+    it('should name the sequential phase a conversation belongs to', () => {
+      expect(orderedPhaseOf([{query: 'a', golden: 'g', phase: 'reset'}]))
+          .toBe('reset');
+      expect(orderedPhaseOf([
+        {query: 'a', golden: 'g', phase: 'seed', conversation_id: 'c'},
+        {query: 'b', golden: 'g', phase: 'seed', conversation_id: 'c'},
+      ])).toBe('seed');
+    });
+
+    it('should leave recall and ordinary conversations to the main pool', () => {
+      expect(orderedPhaseOf([{query: 'a', golden: 'g', phase: 'recall'}]))
+          .toBeUndefined();
+      expect(orderedPhaseOf([{query: 'a', golden: 'g'}])).toBeUndefined();
     });
   });
 
@@ -76,7 +95,9 @@ describe('memory.model', () => {
       ])).toBeTrue();
     });
 
-    it('should not claim recall or ordinary conversations', () => {
+    it('should not claim reset, recall or ordinary conversations', () => {
+      expect(isSeedConversation([{query: 'a', golden: 'g', phase: 'reset'}]))
+          .toBeFalse();
       expect(isSeedConversation([{query: 'a', golden: 'g', phase: 'recall'}]))
           .toBeFalse();
       expect(isSeedConversation([{query: 'a', golden: 'g'}])).toBeFalse();
@@ -106,12 +127,23 @@ describe('memory.model', () => {
       ])).toBeNull();
     });
 
+    it('should accept a reset row ahead of the seed rows', () => {
+      expect(validateMemoryRows([
+        {query: 'forget everything about me', golden: 'ok', phase: 'reset'},
+        {query: 'remember I prefer metric', golden: 'ok', phase: 'seed'},
+        {query: 'what units do I prefer?', golden: 'metric', phase: 'recall'},
+      ])).toBeNull();
+    });
+
     it('should reject a misspelt phase value', () => {
       const error = validateMemoryRows([
         {query: 'a', golden: 'g', phase: 'seeed'},
       ]);
       expect(error).toContain('seeed');
       expect(error).toContain('a');
+      // The message has to name every value the column accepts, or an author
+      // who mistyped 'reset' would never learn the phase exists.
+      expect(error).toContain('reset');
     });
 
     it('should reject a recall row that threads an existing conversation', () => {

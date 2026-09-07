@@ -69,7 +69,7 @@
       [(csvRows)]="uploadedRows"
       (prev)="prevStep()"
       (run)="startEvaluation($event)"
-      [instruction]="'CSV file with at least \'query\' and \'golden\' columns, plus optional \'expected_sources\' for the Source Attribution scorer and \'phase\' (seed / recall) for saved-memory evaluations'"
+      [instruction]="'CSV file with at least \'query\' and \'golden\' columns, plus optional \'expected_sources\' for the Source Attribution scorer and \'phase\' (reset / seed / recall) for saved-memory evaluations'"
       [buttonText]="'Run Evaluation'"
       [requiredColumns]="['query', 'golden']"
     ></app-file-upload>
@@ -91,10 +91,12 @@
           This run may have saved memories to your account.
         </p>
         <p class="text-sm text-amber-700">
-          There is no API to delete them, so they persist until you remove them
-          by hand in Gemini Enterprise (Settings &rsaquo; Personalization &rsaquo;
-          Memories). Re-running this file without clearing them first will save
-          near-duplicate memories and can change what later runs recall.
+          They persist on the signed-in account until something clears them. A
+          run whose file starts with reset rows clears them itself; otherwise
+          ask the assistant to forget them, or remove them by hand in Gemini
+          Enterprise (Settings &rsaquo; Personalization &rsaquo; Memories).
+          Re-running this file without clearing first will save near-duplicate
+          memories and can change what later runs recall.
         </p>
         <ul class="text-sm text-amber-700 list-disc list-inside space-y-0.5">
           <li *ngFor="let query of seededQueries">{{ query }}</li>
@@ -198,15 +200,35 @@
 <!-- Memory Seeding Consent Modal -->
 <div *ngIf="showMemoryConsentModal" class="fixed inset-0 z-50 overflow-y-auto bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
   <div class="bg-white rounded-lg overflow-hidden shadow-xl transform transition-all max-w-lg w-full p-6 space-y-4">
-    <h3 class="text-lg font-medium text-gray-900">This run will save memories to your account</h3>
-    <p class="text-sm text-gray-600">
+    <h3 class="text-lg font-medium text-gray-900">
+      {{ pendingResetQueries.length > 0
+          ? 'This run will delete and save memories on your account'
+          : 'This run will save memories to your account' }}
+    </h3>
+
+    <div *ngIf="pendingResetQueries.length > 0" class="space-y-2">
+      <p class="text-sm text-red-700 font-medium">
+        {{ pendingResetQueries.length }} reset
+        {{ pendingResetQueries.length === 1 ? 'row' : 'rows' }} will run first
+        and ask the assistant to delete saved memories. This is not limited to
+        memories this tool created: anything the signed-in user has saved may be
+        removed, and it cannot be undone.
+      </p>
+      <div class="max-h-32 overflow-y-auto bg-red-50 border border-red-200 rounded-md p-3">
+        <ul class="text-sm text-red-800 list-disc list-inside space-y-1">
+          <li *ngFor="let query of pendingResetQueries">{{ query }}</li>
+        </ul>
+      </div>
+    </div>
+
+    <p *ngIf="pendingSeedQueries.length > 0" class="text-sm text-gray-600">
       {{ pendingSeedQueries.length }} seed
-      {{ pendingSeedQueries.length === 1 ? 'row' : 'rows' }} will run first, in
+      {{ pendingSeedQueries.length === 1 ? 'row' : 'rows' }} will then run, in
       order. Anything the assistant chooses to remember from them is saved
       against the signed-in user and outlives this run &mdash; there is no API
       to delete it, so you will have to clear it by hand afterwards.
     </p>
-    <div class="max-h-40 overflow-y-auto bg-gray-50 border border-gray-200 rounded-md p-3">
+    <div *ngIf="pendingSeedQueries.length > 0" class="max-h-40 overflow-y-auto bg-gray-50 border border-gray-200 rounded-md p-3">
       <ul class="text-sm text-gray-700 list-disc list-inside space-y-1">
         <li *ngFor="let query of pendingSeedQueries">{{ query }}</li>
       </ul>
@@ -227,7 +249,7 @@
         (click)="confirmMemoryRun()"
         class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-md hover:from-blue-700 hover:to-purple-700 transition-colors font-medium"
       >
-        Seed and run
+        {{ pendingResetQueries.length > 0 ? 'Clear, seed and run' : 'Seed and run' }}
       </button>
     </div>
   </div>

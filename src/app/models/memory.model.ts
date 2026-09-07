@@ -44,12 +44,17 @@ export type MemorySupport = 'on'|'off'|'unknown';
 /**
  * The part a row plays in a memory evaluation.
  *
- * `seed` rows run first, sequentially, and are expected to make the assistant
- * save something. `recall` rows run afterwards in fresh sessions and carry the
- * assertions. A row with neither is an ordinary row and behaves exactly as it
- * did before this column existed.
+ * `reset` rows run first of all, sequentially, and are expected to clear what
+ * earlier runs left on the account. `seed` rows run next, also sequentially,
+ * and are expected to make the assistant save something. `recall` rows run
+ * afterwards in fresh sessions and carry the assertions. A row with none of
+ * these is an ordinary row and behaves exactly as it did before this column
+ * existed.
  */
-export type MemoryPhase = 'seed'|'recall';
+export type MemoryPhase = 'reset'|'seed'|'recall';
+
+/** Phases that run sequentially ahead of the main pool, in the order they run. */
+const ORDERED_PHASES: readonly MemoryPhase[] = ['reset', 'seed'];
 
 /**
  * Pause between the seed phase and the rest of the run, in milliseconds.
@@ -88,12 +93,26 @@ export function readMemorySupport(widgetConfig: WidgetConfigResponse|null|
  */
 export function memoryPhaseOf(row: CSVRow): MemoryPhase|undefined {
   const value = (row.phase ?? '').trim().toLowerCase();
-  return value === 'seed' || value === 'recall' ? value : undefined;
+  return value === 'reset' || value === 'seed' || value === 'recall' ?
+      value :
+      undefined;
+}
+
+/**
+ * The sequential phase a conversation belongs to, if any.
+ * @param turns The turns of one conversation, or a single-row group.
+ * @returns 'reset' or 'seed' when any turn declares it, undefined when the
+ *     conversation belongs to the main pool. Turns of one conversation are
+ *     already required to share a phase, so the first match decides.
+ */
+export function orderedPhaseOf(turns: CSVRow[]): MemoryPhase|undefined {
+  return ORDERED_PHASES.find(
+      phase => turns.some(row => memoryPhaseOf(row) === phase));
 }
 
 /** Whether a conversation's turns seed memories rather than assert on them. */
 export function isSeedConversation(turns: CSVRow[]): boolean {
-  return turns.some(row => memoryPhaseOf(row) === 'seed');
+  return orderedPhaseOf(turns) === 'seed';
 }
 
 /**
@@ -112,9 +131,9 @@ export function validateMemoryRows(rows: CSVRow[]): string|null {
   for (const row of rows) {
     const declared = (row.phase ?? '').trim();
     const phase = declared.toLowerCase();
-    if (declared && phase !== 'seed' && phase !== 'recall') {
+    if (declared && !memoryPhaseOf(row)) {
       return `Unknown phase '${declared}' on query "${row.query}". Use ` +
-          `'seed', 'recall', or leave the phase column empty.`;
+          `'reset', 'seed', 'recall', or leave the phase column empty.`;
     }
 
     const conversationId = row.conversation_id?.trim();

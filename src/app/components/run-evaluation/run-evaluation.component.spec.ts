@@ -496,6 +496,148 @@ describe('RunEvaluationComponent', () => {
          expect(component.isProcessing).toBeFalse();
        }));
 
+    it('should clear memories before seeding them, with a settle pause after each phase',
+       fakeAsync(() => {
+         const component = setUp();
+         const {started} = recordOrder();
+
+         // Written in the order an author would read the file back in, which
+         // is the reverse of the order the phases have to run in.
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'recall', golden: 'm', phase: 'recall'},
+             {query: 'seed1', golden: 'ok', phase: 'seed'},
+             {query: 'forget everything', golden: 'ok', phase: 'reset'},
+           ]
+         });
+         tick();
+         component.confirmMemoryRun();
+         tick();
+
+         // A seed row that overlapped the deletion could be deleted by it, so
+         // the reset phase gets its own barrier rather than sharing the seed's.
+         expect(started).toEqual(['forget everything']);
+         expect(component.isSettlingMemories).toBeTrue();
+
+         tick(MEMORY_SETTLE_MS);
+
+         expect(started).toEqual(['forget everything', 'seed1']);
+         expect(component.isSettlingMemories).toBeTrue();
+
+         tick(MEMORY_SETTLE_MS);
+
+         expect(started).toEqual(['forget everything', 'seed1', 'recall']);
+         expect(component.isSettlingMemories).toBeFalse();
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should run reset rows one at a time and record the phase on their results',
+       fakeAsync(() => {
+         const component = setUp('on');
+         const {started, finishedWhenStarted} = recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'forget everything', golden: 'ok', phase: 'reset'},
+             {query: 'list what you saved', golden: 'nothing', phase: 'reset'},
+             {query: 'plain', golden: 'g'},
+           ]
+         });
+         tick();
+         component.confirmMemoryRun();
+         tick();
+
+         // The verification row only means anything after the deletion it
+         // checks has actually been sent.
+         expect(started).toEqual(['forget everything', 'list what you saved']);
+         expect(finishedWhenStarted['list what you saved'])
+             .toContain('forget everything');
+
+         tick(MEMORY_SETTLE_MS);
+
+         const byQuery = new Map(resultsSubject.value.map(r => [r.query, r]));
+         expect(byQuery.get('forget everything')!.memoryPhase).toBe('reset');
+         expect(byQuery.get('forget everything')!.memorySupport).toBe('on');
+         // Reset rows delete rather than save, so they are not teardown debt.
+         expect(component.seededQueries).toEqual([]);
+       }));
+
+    it('should warn about the deletion before a reset row is sent', fakeAsync(() => {
+         const component = setUp();
+         recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'forget everything', golden: 'ok', phase: 'reset'},
+             {query: 'seed1', golden: 'ok', phase: 'seed'},
+           ]
+         });
+         tick();
+
+         // A reset row deletes memories the tool never created and cannot undo
+         // it, so the queries have to be on screen before anything is sent.
+         expect(component.showMemoryConsentModal).toBeTrue();
+         expect(component.pendingResetQueries).toEqual(['forget everything']);
+         expect(component.pendingSeedQueries).toEqual(['seed1']);
+         expect(mockEvalService.processRow).not.toHaveBeenCalled();
+
+         component.cancelMemoryRun();
+         tick();
+
+         expect(component.pendingResetQueries).toEqual([]);
+         expect(mockEvalService.processRow).not.toHaveBeenCalled();
+       }));
+
+    it('should settle after a reset-only file before its ordinary rows run',
+       fakeAsync(() => {
+         const component = setUp();
+         const {started} = recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'forget everything', golden: 'ok', phase: 'reset'},
+             {query: 'plain', golden: 'g'},
+           ]
+         });
+         tick();
+         component.confirmMemoryRun();
+         tick();
+
+         // With no seed phase in between, the ordinary rows are what has to
+         // wait for the deletion to land.
+         expect(started).toEqual(['forget everything']);
+         expect(component.isSettlingMemories).toBeTrue();
+
+         tick(MEMORY_SETTLE_MS);
+
+         expect(started).toEqual(['forget everything', 'plain']);
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should not pause after the last phase when nothing follows it',
+       fakeAsync(() => {
+         const component = setUp();
+         recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'forget everything', golden: 'ok', phase: 'reset'}]
+         });
+         tick();
+         component.confirmMemoryRun();
+         tick();
+
+         // Nothing is waiting on the write, so the run has no reason to hold
+         // the tester for five seconds before reporting.
+         expect(component.isSettlingMemories).toBeFalse();
+         expect(component.isProcessing).toBeFalse();
+         expect(component.completedRows).toBe(1);
+       }));
+
     it('should start the recall row in a fresh session rather than the seed row\'s',
        fakeAsync(() => {
          const component = setUp();
