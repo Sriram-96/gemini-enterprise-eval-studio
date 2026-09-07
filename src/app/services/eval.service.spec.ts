@@ -361,8 +361,23 @@ describe('EvalService', () => {
       const result = await service.processRow({query: 'q', golden: 'g'});
 
       expect(result.thoughts).toBe('');
-      expect(result.fetched).toContain('Error:');
+      expect(result.fetched).toBe('HTTP error 500');
+      expect(result.errorCode).toBe('HTTP 500');
     });
+
+    it('should name the HTTP reason phrase when the server sends one',
+       async () => {
+         const service = setUp();
+         mockBackendService.callAssistSpy.and.returnValue(Promise.resolve(
+             new Response('', {status: 401, statusText: 'Unauthorized'})));
+         spyOn(service['stateService'], 'getCurrentConfig')
+             .and.returnValue(CONFIG);
+
+         const result = await service.processRow({query: 'q', golden: 'g'});
+
+         expect(result.fetched).toBe('HTTP error 401 (Unauthorized)');
+         expect(result.errorCode).toBe('HTTP 401');
+       });
 
     it('should preserve the fetched text if scoring throws an error',
        async () => {
@@ -598,7 +613,7 @@ describe('EvalService', () => {
 
       const result = await service.processRow({query: 'q', golden: 'g'});
 
-      expect(result.fetched).toContain('Error');
+      expect(result.errorCode).toBe('HTTP 500');
       expect(result.citedSources).toBe('');
       expect(result.toolCalls).toBe('');
       expect(result.maxGroundingScore).toBe(0);

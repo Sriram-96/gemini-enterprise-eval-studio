@@ -73,6 +73,7 @@
     <app-csv-table
       [data]="responseResults"
       [columns]="columns"
+      [rowErrorKey]="'errorCode'"
       [title]="'Query Results'"
       [exportFileName]="'query_results'"
     >

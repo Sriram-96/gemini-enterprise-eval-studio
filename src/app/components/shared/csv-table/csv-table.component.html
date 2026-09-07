@@ -31,7 +31,15 @@
         </tr>
       </thead>
       <tbody class="bg-white divide-y divide-gray-200">
-        <tr *ngFor="let row of data; let i = index" class="hover:bg-gray-50 transition-colors">
+        <tr
+          *ngFor="let row of data; let i = index"
+          class="transition-colors"
+          [ngClass]="
+            rowErrorKey && row[rowErrorKey]
+              ? 'bg-red-50 hover:bg-red-100 border-l-4 border-red-500'
+              : 'hover:bg-gray-50'
+          "
+        >
           <td
             *ngFor="let col of columns"
             class="px-6 py-4 text-sm text-gray-500"
