@@ -51,7 +51,8 @@ export class RunQueriesComponent {
     },
     {header: 'TTFT (s)', key: 'ttft', type: 'number'},
     {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
-    {header: 'TTLT (s)', key: 'ttlt', type: 'number'}
+    {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
+    {header: 'TPOT (ms/token)', key: 'tpot', type: 'number'}
   ];
   responseFile: File|null = null;
   responseCsvRows: Array<Record<string, string>> = [];
@@ -142,6 +143,7 @@ export class RunQueriesComponent {
           ttft: result.ttft,
           ttfa: result.ttfa,
           ttlt: result.ttlt,
+          tpot: result.tpot,
           assistToken: result.assistToken,
           projectId: result.projectId,
           region: result.region,

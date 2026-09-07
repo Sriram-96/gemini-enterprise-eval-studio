@@ -51,6 +51,16 @@ export class ProxyEvalBackendService extends EvalBackendService {
     });
   }
 
+  override async callCountTokens(request: ScoreRequest): Promise<Response> {
+    return fetch('/api/v1/count-tokens', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+  }
+
   override async fetchEngines(
       projectId: string,
       region: string,

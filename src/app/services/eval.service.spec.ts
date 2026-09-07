@@ -425,6 +425,69 @@ describe('EvalService', () => {
     });
   });
 
+  describe('computeTpot', () => {
+    /** Invokes the private TPOT helper with explicit latencies. */
+    function tpot(
+        service: EvalService, fullText: string, thoughts: string[],
+        ttftMs: number, ttltMs: number): Promise<number> {
+      return (service as unknown as {
+               computeTpot(
+                   fullText: string, thoughts: string[], ttftMs: number,
+                   ttltMs: number, config: AppConfig): Promise<number>;
+             })
+          .computeTpot(fullText, thoughts, ttftMs, ttltMs, CONFIG);
+    }
+
+    it('divides the generation interval by the tokens after the first',
+       async () => {
+         const service = setUp();
+         mockBackendService.callCountTokensSpy.and.returnValue(
+             Promise.resolve(new Response('{"totalTokens": 11}')));
+
+         // (1100 - 100) / (11 - 1) = 100 ms/token.
+         expect(await tpot(service, 'answer', ['thought'], 100, 1100))
+             .toBe(100);
+       });
+
+    it('counts the thoughts and the answer together with the auto rater model',
+       async () => {
+         const service = setUp();
+         mockBackendService.callCountTokensSpy.and.returnValue(
+             Promise.resolve(new Response('{"totalTokens": 5}')));
+
+         await tpot(service, 'the answer', ['first', 'second'], 100, 900);
+
+         const request =
+             mockBackendService.callCountTokensSpy.calls.mostRecent().args[0];
+         expect(request.model).toBe(CONFIG.autoRaterModel);
+         expect(request.body.contents[0].parts[0].text)
+             .toBe('first\nsecond\nthe answer');
+       });
+
+    it('returns 0 when one token or fewer was produced', async () => {
+      const service = setUp();
+      mockBackendService.callCountTokensSpy.and.returnValue(
+          Promise.resolve(new Response('{"totalTokens": 1}')));
+
+      expect(await tpot(service, 'answer', [], 100, 1100)).toBe(0);
+    });
+
+    it('returns 0 when there is no output text', async () => {
+      const service = setUp();
+
+      expect(await tpot(service, '', [], 100, 1100)).toBe(0);
+      expect(mockBackendService.callCountTokensSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns 0 when counting tokens fails', async () => {
+      const service = setUp();
+      mockBackendService.callCountTokensSpy.and.returnValue(
+          Promise.resolve(new Response('', {status: 500})));
+
+      expect(await tpot(service, 'answer', [], 100, 1100)).toBe(0);
+    });
+  });
+
   describe('processRow session handling', () => {
     let service: EvalService;
 
