@@ -30,6 +30,14 @@ export interface ColumnDef {
   type?: 'text'|'markdown'|'number'|'score'|'delta';
   truncate?: boolean;
   width?: string;
+  /**
+   * Row field whose non-null value shows a leading warning marker on this
+   * cell (a fixed-width slot is reserved either way so text stays aligned).
+   * Only text-type columns honour it.
+   */
+  warnKey?: string;
+  /** Hover text for the warning marker; `{value}` is replaced with row[warnKey]. */
+  warnTooltip?: string;
 }
 
 @Component({
@@ -59,6 +67,12 @@ export class CsvTableComponent implements OnChanges {
    * Left unset, no row is highlighted, so other tables are unaffected.
    */
   @Input() rowErrorKey?: string;
+  /**
+   * Key on each row whose non-null value marks the row as a warning. When set,
+   * such rows get a light-amber fill + amber outline, distinct from (and lower
+   * priority than) the red error highlight. Left unset, no row is highlighted.
+   */
+  @Input() rowWarnKey?: string;
   /** Emits the index of the row whose action button was clicked. */
   @Output() rowAction = new EventEmitter<number>();
 
@@ -68,6 +82,17 @@ export class CsvTableComponent implements OnChanges {
 
   ngOnChanges() {
     this.hasTruncated = this.columns.some(col => col.truncate);
+  }
+
+  /**
+   * Builds the warning marker's hover text for a cell, substituting the row's
+   * value into the column's `warnTooltip` template.
+   * @param col The column definition carrying `warnKey`/`warnTooltip`.
+   * @param row The row being rendered.
+   * @returns The tooltip text, or '' when the column has no template.
+   */
+  warnTitle(col: ColumnDef, row: any): string {
+    return (col.warnTooltip ?? '').replace('{value}', row[col.warnKey!]);
   }
 
   /**

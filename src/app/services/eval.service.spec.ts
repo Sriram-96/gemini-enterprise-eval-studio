@@ -24,7 +24,7 @@ import {DETERMINISTIC_SCORER_ID} from '../scoring/scorers/deterministic.scorer';
 import {MockEvalBackendService} from '../testing/mocks';
 
 import {EvalBackendService} from './eval-backend.service';
-import {EvalService} from './eval.service';
+import {DEFAULT_MAX_TTLT_SECONDS, EvalService} from './eval.service';
 import {StateService} from './state.service';
 
 const CONFIG: AppConfig = {
@@ -437,6 +437,75 @@ describe('EvalService', () => {
       // The primary scorer still succeeded, so its score stands.
       expect(result.score).toBe(0.25);
       expect(result.scoreError).toBe('Second: quota exceeded');
+    });
+  });
+
+  describe('processRow latency flag', () => {
+    /** A streamed assist response carrying a single reply. */
+    function fetched(text: string): Promise<Response> {
+      return Promise.resolve(new Response(JSON.stringify(
+          [{answer: {replies: [{groundedContent: {content: {text}}}]}}])));
+    }
+
+    /**
+     * Pins the wall clock so TTLT is deterministic: the first reading (the run's
+     * start) is 0 and every later reading is `elapsedMs`, making
+     * `ttlt = elapsedMs`.
+     */
+    function pinElapsed(elapsedMs: number) {
+      let first = true;
+      spyOn(Date, 'now').and.callFake(() => {
+        if (first) {
+          first = false;
+          return 0;
+        }
+        return elapsedMs;
+      });
+    }
+
+    it('records the overage when TTLT exceeds the budget', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('answer'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+      pinElapsed((DEFAULT_MAX_TTLT_SECONDS + 5) * 1000);
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.latencyExceededBy).toBe(5);
+    });
+
+    it('leaves the flag unset when TTLT is within the budget', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('answer'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+      pinElapsed((DEFAULT_MAX_TTLT_SECONDS - 5) * 1000);
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.latencyExceededBy).toBeUndefined();
+    });
+
+    it('leaves the flag unset exactly at the budget', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('answer'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+      pinElapsed(DEFAULT_MAX_TTLT_SECONDS * 1000);
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.latencyExceededBy).toBeUndefined();
+    });
+
+    it('leaves the flag unset on a failed row', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(
+          Promise.reject(new Error('network down')));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.errorCode).toBe('ERROR');
+      expect(result.latencyExceededBy).toBeUndefined();
     });
   });
 

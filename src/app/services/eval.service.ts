@@ -77,6 +77,14 @@ function describeError(error: unknown): {code: string; message: string} {
 }
 
 /**
+ * Slow-query threshold in seconds. A completed row whose TTLT exceeds this is
+ * flagged via `ResultRow.latencyExceededBy`, surfacing a warning on the results
+ * table. Tune this single value to change the budget; it is intentionally not
+ * per-row or user-configurable for now.
+ */
+export const DEFAULT_MAX_TTLT_SECONDS = 30;
+
+/**
  * Service for evaluation operations calling real APIs.
  */
 @Injectable({providedIn: 'root'})
@@ -281,6 +289,13 @@ export class EvalService {
       const ttlt = Date.now() - startTime;
       const tpot = await this.computeTpot(fullText, thoughts, ttft, ttlt, config);
 
+      const ttltSeconds = Number((ttlt / 1000).toFixed(2));
+      const over = ttltSeconds - DEFAULT_MAX_TTLT_SECONDS;
+      // Left undefined (not 0) when within budget so fast rows carry no flag and
+      // the results table shows nothing for them.
+      const latencyExceededBy =
+          over > 0 ? Number(over.toFixed(2)) : undefined;
+
       const trace = traceCollector.build();
       const expectedSources = row['expected_sources'] || '';
 
@@ -304,8 +319,9 @@ export class EvalService {
         expectedSources,
         ttft: Number((ttft / 1000).toFixed(2)),
         ttfa: Number((ttfa / 1000).toFixed(2)),
-        ttlt: Number((ttlt / 1000).toFixed(2)),
+        ttlt: ttltSeconds,
         tpot,
+        latencyExceededBy,
         ...summarizeScorerResults(scorerResults),
         errorCode: skippedReason ? 'SKIPPED' : '',
         assistToken,
