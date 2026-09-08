@@ -118,4 +118,9 @@ export interface ResultRow {
   session?: string;
   /** Turn id returned by the Assistant API for this turn. */
   turnId?: string;
+  /**
+   * Human-readable summary of the grounding connectors used for this row,
+   * including `Web Search` when web grounding was enabled.
+   */
+  dataStoresUsed?: string;
 }

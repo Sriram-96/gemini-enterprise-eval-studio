@@ -53,7 +53,7 @@
       [(csvRows)]="responseCsvRows"
       (prev)="prevStep()"
       (run)="startResponseGeneration($event)"
-      [instruction]="'CSV file with at least \'query\' column'"
+      [instruction]="'CSV file with at least \'query\' column. Optional per-row \'data_stores\' column: a JSON array or ;/|-separated list of data store IDs, plus the reserved token \'web_search\' to enable web grounding ([] for none). An empty cell inherits the settings above.'"
       [buttonText]="'Run Queries'"
       [requiredColumns]="['query']"
     ></app-file-upload>

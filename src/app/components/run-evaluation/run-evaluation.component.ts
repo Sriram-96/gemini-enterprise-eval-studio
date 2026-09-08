@@ -43,6 +43,7 @@ const BASE_COLUMNS: readonly ColumnDef[] = [
   {header: 'Fetched', key: 'fetched', type: 'markdown', truncate: true},
   {header: 'Sources', key: 'citedSources', truncate: true},
   {header: 'Connectors', key: 'citedConnectors', truncate: true},
+  {header: 'Requested Connectors', key: 'dataStoresUsed', truncate: true},
   {header: 'Conversation', key: 'conversationId', truncate: true},
   {header: 'Turn', key: 'turn', type: 'number'},
   {header: 'TTFT (s)', key: 'ttft', type: 'number'},

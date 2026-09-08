@@ -706,4 +706,73 @@ describe('EvalService', () => {
          expect(result.expectedSources).toBe('jira-prod');
        });
   });
+
+  describe('processRow per-row connector overrides', () => {
+    /** A streamed assist response carrying a single reply. */
+    function fetched(text: string): Promise<Response> {
+      return Promise.resolve(new Response(JSON.stringify(
+          [{answer: {replies: [{groundedContent: {content: {text}}}]}}])));
+    }
+
+    const lastBody = () =>
+        mockBackendService.callAssistSpy.calls.mostRecent().args[0].body;
+
+    it('enables web search via the reserved connectors token', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('ok'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+
+      const result = await service.processRow(
+          {query: 'q', golden: '', data_stores: '["web_search"]'});
+
+      expect(lastBody().toolsSpec.webGroundingSpec).toBeDefined();
+      expect(result.dataStoresUsed).toBe('Web Search');
+    });
+
+    it('binds per-row data stores from the connectors list', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('ok'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+
+      const result = await service.processRow(
+          {query: 'q', golden: '', data_stores: '["jira"]'});
+
+      const specs = lastBody().toolsSpec.vertexAiSearchSpec.dataStoreSpecs;
+      expect(specs.length).toBe(1);
+      expect(specs[0].dataStore).toContain('/dataStores/jira');
+      expect(lastBody().toolsSpec.webGroundingSpec).toBeUndefined();
+      expect(result.dataStoresUsed).toBe('jira');
+    });
+
+    it('binds a data store and web search together from one list',
+       async () => {
+         const service = setUp();
+         mockBackendService.callAssistSpy.and.returnValue(fetched('ok'));
+         spyOn(service['stateService'], 'getCurrentConfig')
+             .and.returnValue(CONFIG);
+
+         const result = await service.processRow(
+             {query: 'q', golden: '', data_stores: 'jira;web_search'});
+
+         const body = lastBody();
+         expect(body.toolsSpec.vertexAiSearchSpec.dataStoreSpecs[0].dataStore)
+             .toContain('/dataStores/jira');
+         expect(body.toolsSpec.webGroundingSpec).toBeDefined();
+         expect(result.dataStoresUsed).toBe('jira, Web Search');
+       });
+
+    it('inherits global config when no data_stores column is present',
+       async () => {
+         const service = setUp();
+         mockBackendService.callAssistSpy.and.returnValue(fetched('ok'));
+         spyOn(service['stateService'], 'getCurrentConfig')
+             .and.returnValue({...CONFIG, selectedDataStores: ['global-ds']});
+
+         const result = await service.processRow({query: 'q', golden: ''});
+
+         const specs = lastBody().toolsSpec.vertexAiSearchSpec.dataStoreSpecs;
+         expect(specs[0].dataStore).toContain('/dataStores/global-ds');
+         expect(result.dataStoresUsed).toBe('global-ds');
+       });
+  });
 });

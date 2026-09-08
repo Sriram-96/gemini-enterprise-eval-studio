@@ -1,30 +1,30 @@
-query,golden,conversation_id,turn,expected_sources
-What is the maximum single expense amount that does not require written pre-approval?,"$2,400. Anything above that needs pre-approval from a cost-centre owner.",,,Travel and Expense Policy v7
-How many calendar days do I have to submit receipts?,21 calendar days.,,,Travel and Expense Policy v7
-How many transactions failed during incident INC-4471?,"3,140 failed transactions, over a 47-minute window.",,,INC-4471
-What was the root cause of INC-4471?,"A connection pool ceiling of 128 on the tessellate-edge service, which was exceeded after the Castellan migration roughly doubled per-request fan-out to the payment router.",,,INC-4471
-Is Castellan Data Systems approved to receive raw primary account numbers?,"No. Castellan is approved for tokenized payment metadata only, and is explicitly not approved for raw PAN, CVV or cardholder names.",,,Castellan
-"Why did the Castellan migration increase load on the payment router, and was Castellan cleared to handle raw card data?","The tokenization endpoint is called once per line item rather than once per basket, which roughly doubled per-request fan-out. Castellan is approved for tokenized payment metadata only and is not approved for raw PAN.",,,INC-4471;Castellan
-Who was the incident commander on INC-4471 and who ran the Castellan security review?,Priya Vellanki was the incident commander. Ingrid Solberg ran the Castellan vendor security review.,,,INC-4471;Castellan
-What is the floor price for an Enterprise annual contract before VP approval is required?,"$12,900.",,,Q3 Enterprise Pricing Teardown
-What volume discount applies at 250 seats?,14% off the base price.,,,Q3 Enterprise Pricing Teardown
-What is the deadline for action item AI-4471-2 and who owns it?,"31 July 2026, owned by Marcus Oyelaran.",,,INC-4471
-What is our parental leave policy?,Not documented in the available sources. The agent should decline rather than answer.,,,
-What is the current domestic per diem rate for travel?,$63 per day.,conv-perdiem,1,Travel and Expense Policy v7
-What about international?,$91 per day.,conv-perdiem,2,Travel and Expense Policy v7
-How long do I have to submit the receipts for those?,21 calendar days from the transaction date.,conv-perdiem,3,Travel and Expense Policy v7
-"Has that rate always been the same, or did it change recently?","It changed. Under the superseded v6 policy the domestic rate was $58 and international was $84; v7 raised them to $63 and $91 effective 1 April 2026.",conv-perdiem,4,Travel and Expense Policy v7;Travel and Expense Policy v6
-Give me a summary of incident INC-4471.,"A Sev1 on 12 June 2026: checkout was degraded for 47 minutes and 3,140 transactions failed. No customer payment data was exposed.",conv-incident,1,INC-4471
-What was the root cause?,"A connection pool ceiling of 128 on the tessellate-edge service, exceeded after the Castellan migration roughly doubled per-request fan-out to the payment router.",conv-incident,2,INC-4471
-What is that vendor approved to handle?,"Tokenized payment metadata only. Castellan is not approved for raw PAN, CVV or cardholder names.",conv-incident,3,Castellan
-When is their next security review due?,28 May 2027.,conv-incident,4,Castellan
-How long does an on-call primary have to acknowledge a page?,12 minutes.,conv-oncall,1,On-Call Rotation Handbook
-What happens if they miss that window?,"The secondary is paged automatically, and if the secondary does not acknowledge within a further 8 minutes the reliability manager is paged.",conv-oncall,2,On-Call Rotation Handbook
-I was fairly sure the acknowledgement window was 20 minutes. Is that right?,No. The documented window is 12 minutes.,conv-oncall,3,On-Call Rotation Handbook
-Who should I escalate a checkout problem to?,Priya Vellanki is the primary escalation contact for payments and checkout.,conv-oncall,4,On-Call Rotation Handbook
-What is the Enterprise annual base price?,"$18,500, which includes 100 seats.",conv-pricing,1,Q3 Enterprise Pricing Teardown
-What do additional seats cost beyond that?,$63 per seat per year.,conv-pricing,2,Q3 Enterprise Pricing Teardown
-How low can I discount before I need approval?,"The floor is $12,900. Anything below that requires written approval from the VP of Revenue.",conv-pricing,3,Q3 Enterprise Pricing Teardown
-What is the weekend on-call day rate?,$340 per day.,conv-coverage,1,On-Call Rotation Handbook
-And for a public holiday?,$510 per day.,conv-coverage,2,On-Call Rotation Handbook
-What is the parental leave policy?,Not documented in the available sources. The agent should decline rather than answer.,conv-coverage,3,
+query,golden,conversation_id,turn,expected_sources,data_stores
+What is the maximum single expense amount that does not require written pre-approval?,"$2,400. Anything above that needs pre-approval from a cost-centre owner.",,,Travel and Expense Policy v7,"[""gcs-connector_0000000000000""]"
+How many calendar days do I have to submit receipts?,21 calendar days.,,,Travel and Expense Policy v7,"[""gcs-connector_0000000000000""]"
+How many transactions failed during incident INC-4471?,"3,140 failed transactions, over a 47-minute window.",,,INC-4471,"[""gcs-connector_0000000000000""]"
+What was the root cause of INC-4471?,"A connection pool ceiling of 128 on the tessellate-edge service, which was exceeded after the Castellan migration roughly doubled per-request fan-out to the payment router.",,,INC-4471,"[""gcs-connector_0000000000000""]"
+Is Castellan Data Systems approved to receive raw primary account numbers?,"No. Castellan is approved for tokenized payment metadata only, and is explicitly not approved for raw PAN, CVV or cardholder names.",,,Castellan,"[""gcs-connector_0000000000000""]"
+"Why did the Castellan migration increase load on the payment router, and was Castellan cleared to handle raw card data?","The tokenization endpoint is called once per line item rather than once per basket, which roughly doubled per-request fan-out. Castellan is approved for tokenized payment metadata only and is not approved for raw PAN.",,,INC-4471;Castellan,"[""gcs-connector_0000000000000""]"
+Who was the incident commander on INC-4471 and who ran the Castellan security review?,Priya Vellanki was the incident commander. Ingrid Solberg ran the Castellan vendor security review.,,,INC-4471;Castellan,"[""gcs-connector_0000000000000""]"
+What is the floor price for an Enterprise annual contract before VP approval is required?,"$12,900.",,,Q3 Enterprise Pricing Teardown,"[""gcs-connector_0000000000000""]"
+What volume discount applies at 250 seats?,14% off the base price.,,,Q3 Enterprise Pricing Teardown,"[""gcs-connector_0000000000000""]"
+What is the deadline for action item AI-4471-2 and who owns it?,"31 July 2026, owned by Marcus Oyelaran.",,,INC-4471,"[""gcs-connector_0000000000000""]"
+What is our parental leave policy?,Not documented in the available sources. The agent should decline rather than answer.,,,,"[""gcs-connector_0000000000000""]"
+What is the current domestic per diem rate for travel?,$63 per day.,conv-perdiem,1,Travel and Expense Policy v7,"[""gcs-connector_0000000000000""]"
+What about international?,$91 per day.,conv-perdiem,2,Travel and Expense Policy v7,"[""gcs-connector_0000000000000""]"
+How long do I have to submit the receipts for those?,21 calendar days from the transaction date.,conv-perdiem,3,Travel and Expense Policy v7,"[""gcs-connector_0000000000000""]"
+"Has that rate always been the same, or did it change recently?",It changed. Under the superseded v6 policy the domestic rate was $58 and international was $84; v7 raised them to $63 and $91 effective 1 April 2026.,conv-perdiem,4,Travel and Expense Policy v7;Travel and Expense Policy v6,"[""gcs-connector_0000000000000""]"
+Give me a summary of incident INC-4471.,"A Sev1 on 12 June 2026: checkout was degraded for 47 minutes and 3,140 transactions failed. No customer payment data was exposed.",conv-incident,1,INC-4471,"[""gcs-connector_0000000000000""]"
+What was the root cause?,"A connection pool ceiling of 128 on the tessellate-edge service, exceeded after the Castellan migration roughly doubled per-request fan-out to the payment router.",conv-incident,2,INC-4471,"[""gcs-connector_0000000000000""]"
+What is that vendor approved to handle?,"Tokenized payment metadata only. Castellan is not approved for raw PAN, CVV or cardholder names.",conv-incident,3,Castellan,"[""gcs-connector_0000000000000""]"
+When is their next security review due?,28 May 2027.,conv-incident,4,Castellan,"[""gcs-connector_0000000000000""]"
+How long does an on-call primary have to acknowledge a page?,12 minutes.,conv-oncall,1,On-Call Rotation Handbook,"[""gcs-connector_0000000000000""]"
+What happens if they miss that window?,"The secondary is paged automatically, and if the secondary does not acknowledge within a further 8 minutes the reliability manager is paged.",conv-oncall,2,On-Call Rotation Handbook,"[""gcs-connector_0000000000000""]"
+I was fairly sure the acknowledgement window was 20 minutes. Is that right?,No. The documented window is 12 minutes.,conv-oncall,3,On-Call Rotation Handbook,"[""gcs-connector_0000000000000""]"
+Who should I escalate a checkout problem to?,Priya Vellanki is the primary escalation contact for payments and checkout.,conv-oncall,4,On-Call Rotation Handbook,"[""gcs-connector_0000000000000""]"
+What is the Enterprise annual base price?,"$18,500, which includes 100 seats.",conv-pricing,1,Q3 Enterprise Pricing Teardown,"[""gcs-connector_0000000000000""]"
+What do additional seats cost beyond that?,$63 per seat per year.,conv-pricing,2,Q3 Enterprise Pricing Teardown,"[""gcs-connector_0000000000000""]"
+How low can I discount before I need approval?,"The floor is $12,900. Anything below that requires written approval from the VP of Revenue.",conv-pricing,3,Q3 Enterprise Pricing Teardown,"[""gcs-connector_0000000000000""]"
+What is the weekend on-call day rate?,$340 per day.,conv-coverage,1,On-Call Rotation Handbook,"[""gcs-connector_0000000000000""]"
+And for a public holiday?,$510 per day.,conv-coverage,2,On-Call Rotation Handbook,"[""gcs-connector_0000000000000""]"
+What is the parental leave policy?,Not documented in the available sources. The agent should decline rather than answer.,conv-coverage,3,,"[""gcs-connector_0000000000000""]"

@@ -1,407 +1,387 @@
-query,golden,fetched,thoughts,citedSources,citedDataStores,citedConnectors,toolCalls,maxGroundingScore,expectedSources,ttft,ttfa,ttlt,score,scorerId,errorCode,assistToken,projectId,region,engineId,session,turnId,conversationId,turn,score_auto-rater,score_deterministic,score_source-attribution
-How many calendar days do I have to submit receipts?,21 calendar days.,"Under the current Travel and Expense Policy (v7, effective April 1, 2026), you have **21 calendar days** from the transaction date to submit your receipts. 
+query,golden,fetched,thoughts,citedSources,citedDataStores,citedConnectors,toolCalls,maxGroundingScore,expectedSources,ttft,ttfa,ttlt,tpot,score,scorerId,errorCode,assistToken,projectId,region,engineId,session,turnId,dataStoresUsed,conversationId,turn,score_auto-rater,score_deterministic,score_source-attribution
+How many calendar days do I have to submit receipts?,21 calendar days.,"Under the current **Travel and Expense Policy v7** (effective April 1, 2026), you have **21 calendar days** from the transaction date to submit your receipts. 
 
-### 📌 Key Details to Keep in Mind:
-* **Consequences of Delay:** Submissions made after the 21-day window require a written exception from the Controller (Dolores Achterberg) and are reimbursed solely at the discretion of the Finance team.
-* **Exceptions Process:** If you need to request an exception, you must email `finance-exceptions@` and copy your cost-centre owner. Exception requests are reviewed weekly on Thursdays.
-* **Policy Update Note:** Please note that this limit was reduced from 30 calendar days under the older, now-superseded v6 policy. Ensure you adhere to the current 21-day guideline for all recent transactions.
+📌 **Key Takeaway:** 
+* Be sure to submit your expense reports promptly. If you submit receipts after the **21-day window**, you will need to obtain a written exception from the Controller (Dolores Achterberg), and reimbursement will be at the discretion of the Finance team.
+* Note that this is a change from the previous policy (v6), which allowed for 30 calendar days. 
+
+⚠️ **Common Pitfall:** 
+Splitting a single purchase that is over the pre-approval threshold of **$2,400** into multiple smaller transactions to bypass pre-approval is a policy violation and is flagged automatically by the system.
 
 ",,"Travel and Expense Policy v7 (Current) — gs://example-eval-corpus/Travel and Expense Policy v7 (Current).docx
-Travel and Expense Policy v6 (Superseded) — gs://example-eval-corpus/Travel and Expense Policy v6 (Superseded).docx",gcs-connector_0000000000000,Cloud Storage,,0,Travel and Expense Policy v7,9.83,9.83,12.73,1,auto-rater,,REDACTED_ASSIST_TOKEN_01,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000001,,,,1,0.05,1
-Is Castellan Data Systems approved to receive raw primary account numbers?,"No. Castellan is approved for tokenized payment metadata only, and is explicitly not approved for raw PAN, CVV or cardholder names.","**No**, Castellan Data Systems is **not approved** to receive raw primary account numbers (PAN). 
+Travel and Expense Policy v6 (Superseded) — gs://example-eval-corpus/Travel and Expense Policy v6 (Superseded).docx",gcs-connector_0000000000000,Cloud Storage,,0,Travel and Expense Policy v7,9.5,9.5,12.01,13.94,1,auto-rater,,REDACTED_ASSIST_TOKEN_01,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000001,,gcs-connector_0000000000000,,,1,0.05,1
+What was the root cause of INC-4471?,"A connection pool ceiling of 128 on the tessellate-edge service, which was exceeded after the Castellan migration roughly doubled per-request fan-out to the payment router.","The root cause of **INC-4471** was a connection pool exhaustion in the `tessellate-edge` payment router service. 
+
+Specifically, the service was configured with a hard connection pool ceiling of **128** (a legacy setting from 2023). Following the Castellan Data Systems migration on May 28, 2026, the per-request fan-out to the payment router roughly doubled because Castellan's tokenization endpoint is called **once per line item** rather than **once per basket**. 
+
+During a promotional campaign on June 12, 2026, sustained traffic pushed the concurrent connection requests past this 128 ceiling, causing new connections to be refused and resulting in failed checkouts.
+
+### Key Contributing Factors
+* **Outdated Load Testing Profile:** The connection pool ceiling was not caught during load testing because the pre-migration load profile was replayed unchanged and did not account for the new per-line-item tokenization call.
+* **Lack of Concurrency Metrics:** No alerts existed on connection pool utilization (only on overall error rates), meaning the first sign of trouble was customer-visible failures.
+* **Missing Migration Steps:** The Castellan migration runbook did not list downstream concurrency as an affected dimension.
+
+---
+
+",,Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx,gcs-connector_0000000000000,Cloud Storage,,0,INC-4471,9.5,9.5,12.59,11.35,1,auto-rater,,REDACTED_ASSIST_TOKEN_02,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000002,,gcs-connector_0000000000000,,,1,0.18,1
+Is Castellan Data Systems approved to receive raw primary account numbers?,"No. Castellan is approved for tokenized payment metadata only, and is explicitly not approved for raw PAN, CVV or cardholder names.","**No, Castellan Data Systems is not approved to receive raw primary account numbers (PAN).**
 
 ### 📌 Scope of Approval
-According to the Vendor Security Review completed on May 14, 2026 (Review ID: VSR-2026-018), Castellan Data Systems is explicitly approved to process **tokenized payment metadata only**. They are strictly prohibited from receiving:
-* Raw primary account numbers (PAN)
-* CVV values
-* Cardholder names
+According to the Vendor Security Review (Review ID: VSR-2026-018) completed on May 14, 2026, Castellan Data Systems is **approved to process tokenized payment metadata only**. 
 
-### ⚠️ Required Compliance Actions
-Any proposed integration or change that would place raw PAN or other cardholder data within Castellan's scope requires a **completely new vendor security review and official sign-off** from the Security Assurance lead before deployment.
+### ⚠️ Strict Restrictions
+* **Prohibited Data:** Castellan is explicitly **not approved** to receive raw primary account numbers (PAN), CVV values, or cardholder names.
+* **New Review Required:** Any proposed integration or change that would place raw PAN or other cardholder data in scope requires a completely new security review and formal sign-off from the Security Assurance lead before it can be deployed.
 
-",,Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx,gcs-connector_0000000000000,Cloud Storage,,0,Castellan,9.79,9.79,12.81,1,auto-rater,,REDACTED_ASSIST_TOKEN_02,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000002,,,,1,0.22,1
-What is the maximum single expense amount that does not require written pre-approval?,"$2,400. Anything above that needs pre-approval from a cost-centre owner.","The maximum single expense amount that does not require written pre-approval is **$2,400**. 
+### 🔍 System Context & Downstream Impact
+During their migration completed on May 28, 2026, downstream engineering teams noted that Castellan's tokenization endpoint is invoked **once per line item** (rather than once per basket/checkout transaction). Ensure downstream connection pools and concurrency planning are sized to handle this increased fan-out to prevent connection saturation issues.
 
-According to the current **Travel and Expense Policy v7** (effective April 1, 2026), any single expense item *above* $2,400 requires written pre-approval from a cost-centre owner, whereas items at or below $2,400 may be submitted after the fact. 
-
-📌 **Key Details to Keep in Mind:**
-* ⚠️ **Avoid Splitting Transactions:** Splitting a single purchase into multiple sub-$2,400 line items to circumvent the pre-approval process is a policy violation and is automatically flagged.
-* 📅 **Submission Window:** Receipts must be submitted within **21 calendar days** of the transaction date.
-* 🚗 **Mileage Reimbursement:** Personal vehicle mileage is reimbursed at **$0.58 per mile**.
-
-*(Note: This is an increase from the previous Policy v6 threshold of $1,800, which was retired on March 31, 2026.)*
-
-",,"Travel and Expense Policy v7 (Current) — gs://example-eval-corpus/Travel and Expense Policy v7 (Current).docx
-Travel and Expense Policy v6 (Superseded) — gs://example-eval-corpus/Travel and Expense Policy v6 (Superseded).docx",gcs-connector_0000000000000,Cloud Storage,,0,Travel and Expense Policy v7,10.74,10.74,14.12,1,auto-rater,,REDACTED_ASSIST_TOKEN_03,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000003,,,,1,0.13,1
-What was the root cause of INC-4471?,"A connection pool ceiling of 128 on the tessellate-edge service, which was exceeded after the Castellan migration roughly doubled per-request fan-out to the payment router.","📌 **Key Takeaway**
-The root cause of **INC-4471** was a connection limit saturation on the payment router, triggered by a substantial increase in downstream request fan-out following a vendor migration combined with high promotional traffic.
-
----
-
-### 🔍 Detailed Root Cause Analysis
-
-*   **Connection Pool Bottleneck:** The `tessellate-edge` service had a hard connection pool ceiling of **128**, a legacy setting from 2023 that had not been updated.
-*   **The Castellan Migration Impact:** On May 28, 2026, the company completed a migration to Castellan Data Systems. Because Castellan's tokenization endpoint is called **once per line item** (instead of once per basket), this change roughly **doubled the per-request fan-out** to the payment router.
-*   **The Trigger Event:** Under normal traffic volumes, the doubled fan-out did not breach the limit. However, a promotional campaign launched on June 12, 2026, pushed sustained concurrency past the 128-connection threshold. Consequently, new connections were refused, degrading the checkout service for 47 minutes and causing **3,140 failed transactions**.
-*   **Testing Gap:** This ceiling was missed during testing because the pre-migration load profile was replayed without updates, meaning it omitted the new per-line-item tokenization call pattern.
-
----
-
-### ⚠️ Contributing Factors
-1.  **Lack of Utilization Metrics:** There were no alerts configured for connection pool utilization; engineers were only paged once user-facing error rates crossed the 5% threshold.
-2.  **Runbook Omissions:** The Castellan migration runbook did not identify downstream concurrency as an affected performance dimension.
-
-",,Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx,gcs-connector_0000000000000,Cloud Storage,,0,INC-4471,10.29,10.29,15.55,1,auto-rater,,REDACTED_ASSIST_TOKEN_04,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000004,,,,1,0.15,1
-How many transactions failed during incident INC-4471?,"3,140 failed transactions, over a 47-minute window.","During incident INC-4471, **3,140 transactions failed**. 
-
-The failure occurred over a 47-minute window when the Tessellate payment router began rejecting connections under load. Fortunately, no customer payment data was exposed, and no double-charges occurred.
-
-","**Investigating Incident Data**
-**Analyzing Transaction Failures**",Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx,gcs-connector_0000000000000,Cloud Storage,,0,INC-4471,6.01,16.02,18.4,1,auto-rater,,REDACTED_ASSIST_TOKEN_05,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000005,,,,1,0.34,1
-What is the floor price for an Enterprise annual contract before VP approval is required?,"$12,900.","The floor price for an Enterprise annual contract before VP approval is required is **$12,900**. Any proposed pricing below this amount requires written approval from the VP of Revenue. 
+",,"Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx
+Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx",gcs-connector_0000000000000,Cloud Storage,,0,Castellan,9.54,9.54,13.31,15.59,1,auto-rater,,REDACTED_ASSIST_TOKEN_03,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000003,,gcs-connector_0000000000000,,,1,0.2,1
+What is the maximum single expense amount that does not require written pre-approval?,"$2,400. Anything above that needs pre-approval from a cost-centre owner.","Under the current Travel and Expense Policy (v7), the maximum single expense amount that **does not require written pre-approval is $2,400**. 
 
 ### Key Details to Keep in Mind:
-* 🛡️ **Floor Price:** **$12,900** (Deals at or above this floor can be closed directly by the Account Executive without VP sign-off).
-* 📈 **List Price:** The standard list price for an Enterprise base annual contract (which includes 100 seats) is **$18,500**.
-* ➕ **Additional Seats:** Seats beyond the initial 100-seat allocation cost **$63 per seat per year**.
-* 🔄 **Multi-year Commitments:** You can apply an additional compounding discount of **6% per year** beyond year one for multi-year commitments without needing further approvals.
+* 📌 **Pre-Approval Threshold:** Any single expense item **above $2,400** requires written pre-approval from a cost-center owner before the spend is committed. Items at or below $2,400 do not require pre-approval and can be submitted after the fact.
+* ⚠️ **Policy Violation Watchout:** Splitting a single purchase into multiple sub-$2,400 line items to circumvent this pre-approval requirement is a direct policy violation and is automatically flagged by reconciliation systems.
+* ⏱️ **Submission Window:** Keep in mind that receipts must be submitted within **21 calendar days** of the transaction date to be eligible for standard reimbursement.
 
-",,Q3 Enterprise Pricing Teardown — gs://example-eval-corpus/Q3 Enterprise Pricing Teardown.docx,gcs-connector_0000000000000,Cloud Storage,,0,Q3 Enterprise Pricing Teardown,9.53,9.53,12.71,1,auto-rater,,REDACTED_ASSIST_TOKEN_06,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000006,,,,1,0.03,1
-"Why did the Castellan migration increase load on the payment router, and was Castellan cleared to handle raw card data?","The tokenization endpoint is called once per line item rather than once per basket, which roughly doubled per-request fan-out. Castellan is approved for tokenized payment metadata only and is not approved for raw PAN.","📌 **The Castellan migration roughly doubled the per-request fan-out load on the payment router, and Castellan was strictly *not* cleared to handle raw card data.**
+",,Travel and Expense Policy v7 (Current) — gs://example-eval-corpus/Travel and Expense Policy v7 (Current).docx,gcs-connector_0000000000000,Cloud Storage,,0,Travel and Expense Policy v7,9.5,9.5,12.01,13.39,1,auto-rater,,REDACTED_ASSIST_TOKEN_04,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000004,,gcs-connector_0000000000000,,,1,0.13,1
+How many transactions failed during incident INC-4471?,"3,140 failed transactions, over a 47-minute window.","During incident INC-4471, **3,140 transactions failed**. 
+
+### 📌 Key Details of the Incident:
+* **Duration:** Checkout was degraded for **47 minutes** (from 14:06 to 14:53 UTC on June 12, 2026).
+* **Cause:** The `tessellate-edge` service connection pool hit its ceiling of 128 connections. Concurrency spiked past this limit due to a promotional campaign combined with a recent migration that doubled the per-request fan-out to the payment router.
+* **Resolution:** The connection pool limit was raised from 128 to 512, resolving the error rate. No customer payment data was exposed.
+
+",,Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx,gcs-connector_0000000000000,Cloud Storage,,0,INC-4471,10.27,10.27,13.32,19.01,1,auto-rater,,REDACTED_ASSIST_TOKEN_05,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000005,,gcs-connector_0000000000000,,,1,0.08,1
+Who was the incident commander on INC-4471 and who ran the Castellan security review?,Priya Vellanki was the incident commander. Ingrid Solberg ran the Castellan vendor security review.,"**Priya Vellanki** served as the incident commander on INC-4471. 
+
+The Castellan security review (Review ID: VSR-2026-018) was conducted by **Ingrid Solberg** from Security Assurance.
+
+---
+
+### 📌 Summary of Roles
+* **Incident Commander (INC-4471):** Priya Vellanki
+* **Security Reviewer (Castellan Data Systems):** Ingrid Solberg
+
+",,"Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx
+Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx",gcs-connector_0000000000000,Cloud Storage,,0,INC-4471;Castellan,9.54,9.54,12.16,27.29,1,auto-rater,,REDACTED_ASSIST_TOKEN_06,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000006,,gcs-connector_0000000000000,,,1,0.32,1
+What volume discount applies at 250 seats?,14% off the base price.,"At **250 seats**, a **14% discount** off the base price applies. 
+
+### Volume Discount Structure
+According to the **Q3 Enterprise Pricing Teardown**, volume discounts for Enterprise licensing are tiered as follows:
+
+| Seats | Discount off Base |
+| :--- | :--- |
+| 100–249 | 0% |
+| **250–499** | **14%** |
+| 500–999 | 22% |
+| 1,000+ | Bespoke (requires VP Revenue approval) |
+
+---
+📌 **Key Pricing Details to Keep in Mind:**
+* **Base Pricing:** The Enterprise tier has an annual base price of **$18,500**, which includes the first **100 seats**.
+* **Additional Seats:** Any additional seats beyond the initial 100 allocation are priced at **$63 per seat per year**.
+* **Approval Floors:** The absolute floor price for an Enterprise annual contract is **$12,900**. Any contract priced below this threshold requires written approval from the VP of Revenue.
+
+",,Q3 Enterprise Pricing Teardown — gs://example-eval-corpus/Q3 Enterprise Pricing Teardown.docx,gcs-connector_0000000000000,Cloud Storage,,0,Q3 Enterprise Pricing Teardown,8.7,8.7,11.39,10.85,1,auto-rater,,REDACTED_ASSIST_TOKEN_07,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000007,,gcs-connector_0000000000000,,,1,0.08,1
+What is the floor price for an Enterprise annual contract before VP approval is required?,"$12,900.","The floor price for an Enterprise annual contract before VP approval is required is **$12,900**. 
+
+### Key Details & Guidelines:
+* 💼 **Standard Enterprise List Price**: The standard annual base price is $18,500 (which includes 100 seats, with additional seats priced at $63 per seat per year).
+* ⚠️ **VP Approval Requirement**: Any proposed contract price below the **$12,900 floor price** requires written approval from the VP of Revenue before a quote can be issued. Proposed deals at or above this threshold can be closed directly by the account executive.
+* 📈 **Multi-Year Commitments**: Multi-year commitments can apply an additional 6% per year beyond year one (compounding) without needing further approvals.
 
 ---
 
-### 1. Impact on the Payment Router Load
-The Castellan Data Systems migration (completed on May 28, 2026) significantly increased load on the payment router because **its tokenization endpoint is called once per individual line item rather than once per shopping basket**. 
-* **The Problem:** This design change doubled the per-request fan-out to the payment router (`tessellate-edge` service). 
-* **The Incident:** Under a promotional campaign on June 12, 2026, the increased downstream concurrency surpassed the router's historical connection pool ceiling (which was hardcoded to 128). This connection pool saturation caused a 47-minute Sev1 incident where 3,140 customer transactions failed.
+",,Q3 Enterprise Pricing Teardown — gs://example-eval-corpus/Q3 Enterprise Pricing Teardown.docx,gcs-connector_0000000000000,Cloud Storage,,0,Q3 Enterprise Pricing Teardown,9.85,9.85,13.37,20.71,1,auto-rater,,REDACTED_ASSIST_TOKEN_08,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000008,,gcs-connector_0000000000000,,,1,0.04,1
+What is the deadline for action item AI-4471-2 and who owns it?,"31 July 2026, owned by Marcus Oyelaran.","**Marcus Oyelaran** is the owner of action item **AI-4471-2**, and the deadline to complete it is **31 July 2026**. 
 
-### 2. Handling of Raw Card Data
-No, Castellan was **not cleared to handle raw card data**. 
-* **Approved Scope:** According to the Vendor Security Review (VSR-2026-018) completed on May 14, 2026, Castellan is approved to process **tokenized payment metadata only**.
-* **Explicit Restrictions:** Castellan is explicitly **not approved** to receive raw primary account numbers (PAN), CVV values, or cardholder names. 
-* **Compliance Requirement:** Any future integration or change that would place raw card data in scope requires a completely new security review and formal sign-off from the Security Assurance lead before deployment.
+This action item involves re-running load tests with the post-Castellan fan-out profile following the checkout degradation incident (INC-4471) on June 12, 2026.
+
+",,Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx,gcs-connector_0000000000000,Cloud Storage,,0,INC-4471,8.3,8.3,10.43,25.3,1,auto-rater,,REDACTED_ASSIST_TOKEN_09,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000009,,gcs-connector_0000000000000,,,1,0.11,1
+"Why did the Castellan migration increase load on the payment router, and was Castellan cleared to handle raw card data?","The tokenization endpoint is called once per line item rather than once per basket, which roughly doubled per-request fan-out. Castellan is approved for tokenized payment metadata only and is not approved for raw PAN.","**The Castellan migration increased the load on the payment router because its tokenization endpoint is invoked once per line item rather than once per basket, which roughly doubled the per-request fan-out. Furthermore, Castellan is strictly not approved to handle raw card data.**
 
 ---
-⚠️ **Watch out for:** Future migration runbooks and load-testing profiles must be updated. The June 12 incident occurred because load tests replayed pre-migration traffic profiles, failing to simulate the new per-line-item downstream concurrency demands.
 
-",,"Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx
-Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx",gcs-connector_0000000000000,Cloud Storage,,0,INC-4471;Castellan,9.83,9.83,14.43,1,auto-rater,,REDACTED_ASSIST_TOKEN_07,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000007,,,,1,0.21,1
-Who was the incident commander on INC-4471 and who ran the Castellan security review?,Priya Vellanki was the incident commander. Ingrid Solberg ran the Castellan vendor security review.,"The incident commander on **INC-4471** was **Priya Vellanki** [source: 1], and the Castellan security review was conducted by **Ingrid Solberg** from Security Assurance [source: 2].
+### 🔄 Castellan Migration & Payment Router Load
+* **Root Cause of Load Increase:** The Castellan Data Systems migration (completed on May 28, 2026) roughly **doubled the per-request fan-out** to the Tessellate payment router.
+* **The Mechanism:** Instead of initiating a single tokenization call per checkout basket, Castellan's tokenization endpoint is invoked **once per line item**.
+* **The Incident Impact:** Under standard traffic, the doubled fan-out stayed below critical levels. However, during a promotional campaign on June 12, 2026, the increased fan-out pushed sustained concurrency past the `tessellate-edge` service's historical connection pool limit of 128, triggering a Sev1 incident where 3,140 transactions failed due to connection saturation.
 
-### 🔍 Key Incident & Review Details
+### 🔒 Raw Card Data Security Clearance
+* **Clearance Status:** ❌ **Not Cleared.** According to Vendor Security Review **VSR-2026-018**, Castellan is approved to process **tokenized payment metadata only**.
+* **Prohibited Data:** Castellan is explicitly **not approved** to receive raw primary account numbers (PAN), CVV values, or cardholder names. 
+* **Policy Constraint:** Any integration or pipeline change that would place raw cardholder data in scope for Castellan requires a completely new security review and formal sign-off from the Security Assurance lead prior to deployment.
 
-*   **INC-4471 Incident Commander:** **Priya Vellanki** led the resolution during the Sev1 checkout degradation on **12 June 2026** [source: 1]. The incident, which caused checkout failures for 47 minutes, was resolved by raising the connection pool ceiling from 128 to 512 [source: 1].
-*   **Castellan Security Reviewer:** **Ingrid Solberg** completed the Vendor Security Review (**VSR-2026-018**) for Castellan Data Systems on **14 May 2026** [source: 2]. The integration was approved with conditions to handle tokenized payment metadata only [source: 2].
-
-### ⚠️ Related Gaps & Contributing Factors
-The Castellan migration completed on 28 May 2026 roughly doubled per-request fan-out to the payment router because its tokenization endpoint is called once per line item rather than once per basket [source: 1, 2]. Under the promotion load on 12 June, this caused the connection pool to saturate, triggering INC-4471 [source: 1]. 
-
-","**Investigating Internal Inquiries**
-**Identifying Key Personnel**",,,,,0,INC-4471;Castellan,6.14,13.61,17.09,1,auto-rater,,REDACTED_ASSIST_TOKEN_08,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000008,,,,1,0.12,0
-What volume discount applies at 250 seats?,14% off the base price.,"At 250 seats, a **14% volume discount** off the base price applies. 
-
-### 📌 Key Details
-* **Applicable Tier:** This discount falls under the **250–499 seats** volume bracket.
-* **Base Pricing:** For reference, the Enterprise base tier is **$18,500** per year (which includes 100 seats), with additional seats priced at $63 per seat per year.
-* **Floor Price Warning:** Note that any custom contract pricing below the floor price of **$12,900** requires written approval from the VP of Revenue.
-
-",,Q3 Enterprise Pricing Teardown — gs://example-eval-corpus/Q3 Enterprise Pricing Teardown.docx,gcs-connector_0000000000000,Cloud Storage,,0,Q3 Enterprise Pricing Teardown,13.19,13.19,15.52,1,auto-rater,,REDACTED_ASSIST_TOKEN_09,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000009,,,,1,0.12,1
-What is the deadline for action item AI-4471-2 and who owns it?,"31 July 2026, owned by Marcus Oyelaran.","📌 The action item **AI-4471-2** is owned by **Marcus Oyelaran** and is due on **31 July 2026**. 
-
-This action item involves re-running load tests with the post-Castellan fan-out profile following the checkout degradation incident that occurred on 12 June 2026.
-
-",,Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx,gcs-connector_0000000000000,Cloud Storage,,0,INC-4471,9.41,9.41,11.72,1,auto-rater,,REDACTED_ASSIST_TOKEN_10,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000010,,,,1,0.16,1
-How long does an on-call primary have to acknowledge a page?,12 minutes.,"A paged on-call primary has **12 minutes** to acknowledge a page. 
-
-### ⏱️ Escalation Path & Timeframes
-If the primary does not acknowledge within that window, the system automatically escalates the alert:
-* **At 12 minutes:** The on-call secondary is paged.
-* **At 20 minutes (8 minutes after secondary is paged):** The reliability manager is paged if still unacknowledged.
-* **At 25 minutes (For Sev1 Incidents):** An executive bridge must be opened, regardless of whether the incident is already mitigated.
-
-📌 **Key Takeaway:** If you are on shift as the primary, ensure your notification pathways are clear to acknowledge all pages within the strict **12-minute threshold** to avoid automatic escalation to your secondary.
-
-",,On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx,gcs-connector_0000000000000,Cloud Storage,,0,On-Call Rotation Handbook,9.75,9.75,13.2,1,auto-rater,,REDACTED_ASSIST_TOKEN_11,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000011,,conv-oncall,1,1,0.04,1
-Give me a summary of incident INC-4471.,"A Sev1 on 12 June 2026: checkout was degraded for 47 minutes and 3,140 transactions failed. No customer payment data was exposed.","📌 **Incident INC-4471** occurred on **12 June 2026** and resulted in a **47-minute checkout degradation** (14:06 to 14:53 UTC) during which **3,140 transactions failed**. There was no exposure of customer payment data and no double-charges occurred. 
-
-Here is a summary of the incident details:
-
-### 🔍 Root Cause
-The incident was triggered by a connection pool exhaustion on the `tessellate-edge` service, which had a connection pool ceiling of **128** (configured in 2023). On 28 May 2026, a migration to **Castellan Data Systems** was completed, which roughly doubled the per-request fan-out to the payment router because Castellan's tokenization endpoint is called once per line item rather than once per basket. 
-During a promotional campaign on 12 June, sustained traffic pushed connection concurrency past the 128 ceiling, causing new connection attempts to fail. This ceiling was missed during load testing because pre-migration load profiles were replayed without accounting for the new per-line-item tokenization call.
-
-### ⚠️ Contributing Factors
-* **Monitoring Gap**: There were no alerts on connection pool utilization (only on error rates), meaning the first warning sign was active, customer-visible checkout failures.
-* **Runbook Gap**: The Castellan migration runbook did not document downstream concurrency as an affected dimension.
-
-### ⏱️ Incident Timeline (12 June 2026)
-* **14:06 UTC**: Checkout error rate crossed 5% and the primary on-call engineer was paged.
-* **14:11 UTC**: Primary on-call acknowledged the page.
-* **14:19 UTC**: Tessellate connection saturation was identified as the likely cause.
-* **14:31 UTC**: Executive bridge was opened in accordance with Sev1 procedures.
-* **14:44 UTC**: Connection pool ceiling was raised from 128 to 512, and error rates began dropping.
-* **14:53 UTC**: Error rate returned to baseline and the incident was resolved.
-
-### 📋 Follow-Up Action Items
-* **AI-4471-1**: Set up an alert at 70% connection pool utilization (Owner: **Priya Vellanki** | Due: **30 June 2026**).
-* **AI-4471-2**: Re-run load tests using the post-Castellan fan-out profile (Owner: **Marcus Oyelaran** | Due: **31 July 2026**).
-* **AI-4471-3**: Update the migration runbook template to include downstream concurrency considerations (Owner: **Ingrid Solberg** | Due: **14 August 2026**).
-
-",,"Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx
-Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx",gcs-connector_0000000000000,Cloud Storage,,0,INC-4471,9.27,9.27,14.63,0.85,auto-rater,,REDACTED_ASSIST_TOKEN_12,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000012,,conv-incident,1,0.85,0.07,1
+","**Investigating System Behavior**
+**Analyzing Castellan's Impact**
+**Investigating Payment Router Load**
+**Confirming Castellan's Tokenization Scope**
+**Confirming Load Mechanism**","Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx
+Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx",gcs-connector_0000000000000,Cloud Storage,,0,INC-4471;Castellan,5,14.9,18.4,32.76,1,auto-rater,,REDACTED_ASSIST_TOKEN_10,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000010,,gcs-connector_0000000000000,,,1,0.24,1
 What is the current domestic per diem rate for travel?,$63 per day.,"The current domestic per diem rate for travel is **$63 per day**. 
 
-This rate went into effect on **April 1, 2026**, under the updated *Travel and Expense Policy v7 (FIN-EXP-07)*, which superseded the previous rate of $58 per day. 
+### 📌 Key Details
+* **Applicability:** This rate applies to domestic travel within the same country as your home office and covers meals and incidental expenses only. 
+* **Effective Date:** This rate became effective on **1 April 2026** under the *Travel and Expense Policy v7*. It supersedes the previous rate of $58 per day.
+* **Exclusions:** Same-day travel lasting under 8 hours is not eligible for per diem allowances. Additionally, lodging is not covered by this per diem and must be reimbursed against actual receipts.
 
-### 📌 Key Details to Keep in Mind:
-* 🍽️ **Coverage:** The $63 daily allowance covers **meals and incidental expenses only**. Lodging is reimbursed separately against actual receipts.
-* ⏱️ **Duration Limit:** Same-day travel lasting **under 8 hours** is not eligible for per diem.
-* 🚗 **Mileage Reimbursement:** If you use your personal vehicle for domestic travel, the reimbursement rate is **$0.58 per mile** (and must include origin, destination, and business purpose).
-* 🗓️ **Submission Deadline:** Make sure to submit your expense receipts within **21 calendar days** of the transaction date to guarantee reimbursement.
+---
+
+### ⚠️ Watch Out For (Common Pitfalls)
+* **Receipt Submission Window:** You must submit your travel receipts within **21 calendar days** of the transaction date. Submissions after this window require a written exception from the Controller and are reimbursed only at the discretion of Finance.
+* **Pre-approval Threshold:** Any single expense item **above $2,400** requires written pre-approval from a cost-center owner before making the purchase. Splitting a single purchase into multiple smaller transactions to bypass this limit is a policy violation and will be flagged automatically.
 
 ",,"Travel and Expense Policy v7 (Current) — gs://example-eval-corpus/Travel and Expense Policy v7 (Current).docx
-Travel and Expense Policy v6 (Superseded) — gs://example-eval-corpus/Travel and Expense Policy v6 (Superseded).docx",gcs-connector_0000000000000,Cloud Storage,,0,Travel and Expense Policy v7,19.3,19.3,24.88,1,auto-rater,,REDACTED_ASSIST_TOKEN_13,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000013,,conv-perdiem,1,1,0.05,1
-What happens if they miss that window?,"The secondary is paged automatically, and if the secondary does not acknowledge within a further 8 minutes the reliability manager is paged.","If the on-call primary misses the **12-minute acknowledgment window**, the paging system automatically triggers the following escalation protocol:
+Travel and Expense Policy v6 (Superseded) — gs://example-eval-corpus/Travel and Expense Policy v6 (Superseded).docx",gcs-connector_0000000000000,Cloud Storage,,0,Travel and Expense Policy v7,9.17,9.17,11.68,9.8,1,auto-rater,,REDACTED_ASSIST_TOKEN_11,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000011,,gcs-connector_0000000000000,conv-perdiem,1,1,0.03,1
+How long does an on-call primary have to acknowledge a page?,12 minutes.,"An on-call primary has **12 minutes** to acknowledge a page. 
 
-* 👥 **At 12 minutes:** The **on-call secondary** is immediately paged.
-* 📈 **At 20 minutes** (8 minutes after the secondary is alerted): The **reliability manager** is paged.
-* 🚨 **At 25 minutes (for Sev1 incidents):** An **executive bridge** must be opened, even if the incident has already been mitigated in the meantime.
+### ⏱️ Escalation Path
+If the primary does not acknowledge the page within that 12-minute window, the system automatically triggers the following escalation path:
+1. **Secondary On-Call:** Paged automatically after 12 minutes of no response from the primary.
+2. **Reliability Manager:** Paged if the secondary does not acknowledge the escalation within a further **8 minutes**.
 
-📌 **Recommended Action:** If you realize you have missed a page and it has already escalated to your secondary, sync up with them immediately via your team's chat channel to clarify who is taking ownership of the incident to prevent duplicate triage efforts.
+📌 **Important Note for Sev1 Incidents:** For any Severity 1 (Sev1) incident, an executive bridge must be opened within **25 minutes** of the initial page, regardless of whether the incident has already been mitigated.
 
-",,,,,,0,On-Call Rotation Handbook,4.45,4.45,7.14,0.9,auto-rater,,REDACTED_ASSIST_TOKEN_14,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000011,,conv-oncall,2,0.9,0.17,0
-What was the root cause?,"A connection pool ceiling of 128 on the tessellate-edge service, exceeded after the Castellan migration roughly doubled per-request fan-out to the payment router.","🎯 **The primary root cause of incident INC-4471 was connection pool exhaustion on the `tessellate-edge` service.** 
+",,On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx,gcs-connector_0000000000000,Cloud Storage,,0,On-Call Rotation Handbook,9.28,9.28,11.97,18.03,1,auto-rater,,REDACTED_ASSIST_TOKEN_12,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000012,,gcs-connector_0000000000000,conv-oncall,1,1,0.04,1
+What is the Enterprise annual base price?,"$18,500, which includes 100 seats.","The Enterprise annual base price is **$18,500**. 
 
-Here is how the underlying issues combined to trigger the checkout degradation:
+### Key Details & Pricing Structure
+* 🌐 **What's Included:** The base price includes **100 seats**.
+* 👥 **Additional Seats:** Any seats beyond the initial 100 allocation are priced at **$63 per seat per year**.
+* 📉 **Volume Discounts:** Volume discounts apply to the base price depending on seat count:
+  * **100–249 seats:** 0% discount.
+  * **250–499 seats:** 14% discount.
+  * **500–999 seats:** 22% discount.
+  * **1,000+ seats:** Bespoke pricing (requires VP of Revenue approval).
+* 🛑 **Floor Pricing:** The absolute floor price for an Enterprise annual contract is **$12,900**. Any proposed contract price below this floor requires written approval from the VP of Revenue.
 
-* ⚙️ **Outdated Concurrency Ceiling**: The connection pool ceiling for `tessellate-edge` was set to **128** in 2023 and had not been updated.
-* 🔄 **Increased API Demands (Castellan Migration)**: On 28 May 2026, the company migrated to **Castellan Data Systems**. This migration changed the payment routing architecture: Castellan's tokenization endpoint is called **once per line item** instead of once per basket, which roughly doubled the per-request fan-out demand.
-* 📈 **Traffic Spike**: During a promotional campaign on 12 June, the sustained volume of transactions pushed concurrent connection attempts past the 128-limit ceiling, causing immediate failures for any subsequent checkout attempts.
-* 🧪 **Load Testing Gap**: The connection bottleneck was missed during pre-migration testing because load testing profiles replayed *pre-migration* traffic volumes, failing to account for the new per-line-item tokenization call pattern.
+",,Q3 Enterprise Pricing Teardown — gs://example-eval-corpus/Q3 Enterprise Pricing Teardown.docx,gcs-connector_0000000000000,Cloud Storage,,0,Q3 Enterprise Pricing Teardown,7.85,7.85,10.53,12.6,1,auto-rater,,REDACTED_ASSIST_TOKEN_13,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000013,,gcs-connector_0000000000000,conv-pricing,1,1,0.09,1
+Give me a summary of incident INC-4471.,"A Sev1 on 12 June 2026: checkout was degraded for 47 minutes and 3,140 transactions failed. No customer payment data was exposed.","# Summary of Incident INC-4471
 
-",,,,,,0,INC-4471,4.55,4.55,8.3,1,auto-rater,,REDACTED_ASSIST_TOKEN_15,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000012,,conv-incident,2,1,0.19,0
+**Incident INC-4471** occurred on **12 June 2026** and was classified as a **Sev1 (Severe) Internal Engineering incident**. The incident caused checkout services to be degraded for **47 minutes** (from 14:06 to 14:53 UTC). During this window, **3,140 transactions failed**, although no customer payment data was exposed or double-charged.
+
+---
+
+## 🔍 Root Cause & Contributing Factors
+
+*   **Connection Pool Saturation:** The connection pool ceiling for the `tessellate-edge` service was set to **128** in 2023 and had never been updated.
+*   **The Castellan Migration Impact:** Following the Castellan Data Systems migration completed on 28 May 2026, the per-request fan-out to the payment router roughly doubled. This is because Castellan's tokenization endpoint is called **once per line item** rather than once per basket.
+*   **Unrepresentative Load Testing:** The doubled connection footprint was not flagged prior to deployment because pre-migration load testing replayed profiles that did not simulate the new per-line-item tokenization behavior.
+*   **Lack of Proactive Alerting:** There were no alerts configured for connection pool utilization; the system only alerted once customer-facing error rates crossed a threshold.
+*   **Runbook Gap:** The migration template runbook failed to identify downstream concurrency as a potential risk dimension.
+
+---
+
+## ⏱️ Timeline of Events (UTC)
+
+*   **14:06** – Checkout error rate crosses 5%; the primary on-call is paged.
+*   **14:11** – Primary acknowledges the page.
+*   **14:19** – Tessellate connection saturation is identified as the likely failure point.
+*   **14:31** – Executive bridge opened in accordance with Sev1 incident guidelines.
+*   **14:44** – **Mitigation:** The connection pool ceiling is raised from **128 to 512**, causing error rates to rapidly fall.
+*   **14:53** – Error rates return to baseline, and the incident is officially resolved.
+
+---
+
+## 📌 Follow-up Action Items
+
+| ID | Action Item | Owner | Due Date |
+| :--- | :--- | :--- | :--- |
+| **AI-4471-1** | Create alerts for connection pool utilization reaching **70%** | Priya Vellanki | 30 June 2026 |
+| **AI-4471-2** | Re-run load tests with post-Castellan fan-out profile | Marcus Oyelaran | **31 July 2026** |
+| **AI-4471-3** | Add downstream concurrency metrics to the migration runbook template | Ingrid Solberg | 14 August 2026 |
+
+",,"Incident Postmortem INC-4471 — gs://example-eval-corpus/Incident Postmortem INC-4471.docx
+Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx",gcs-connector_0000000000000,Cloud Storage,,0,INC-4471,9.3,9.3,13.99,7.24,1,auto-rater,,REDACTED_ASSIST_TOKEN_14,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000014,,gcs-connector_0000000000000,conv-incident,1,1,0.1,1
+What is our parental leave policy?,Not documented in the available sources. The agent should decline rather than answer.,"Based on a search of our internal knowledge base and company documents, we do not currently have a recorded parental leave policy (or related maternity/paternity policies) available in our ingested systems. The documents found primarily cover travel and expense policies, on-call rotation procedures, pricing teardowns, and vendor security reviews. 
+
+If you are looking for specific details regarding parental leave, benefits, or time-off requests, I recommend reaching out directly to the **People Operations / HR team** or checking our external HR portal (such as Workday or Sequoia, depending on what we use) where these policy documents are typically hosted.
+
+---
+
+### 📌 Recommended Actions & Next Steps
+* **Contact People Ops:** Send an inquiry to your HR representative or People Ops alias to request the latest Parental Leave Policy PDF.
+* **Check the Employee Portal:** If we have an internal wiki (like Notion or Confluence) that is not fully synced to this search agent, try searching for ""Parental Leave"" or ""Benefits Guide"" directly there. 
+
+",,,,,,0,,16.91,16.91,21.09,19.88,1,auto-rater,,REDACTED_ASSIST_TOKEN_15,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000015,,gcs-connector_0000000000000,,,1,0.06,
+What do additional seats cost beyond that?,$63 per seat per year.,"Additional seats beyond the initial 100-seat allocation cost **$63 per seat per year** under the standard annual contract pricing structure.
+
+### Volume-Based Discount Brackets
+If your total seat count increases and moves you into a higher tier, the standard list price of **$63/seat/year** is discounted as follows:
+
+| Seat Count | Seat Price Discount | Net Price per Additional Seat |
+| :--- | :--- | :--- |
+| **100 – 249** | 0% | **$63.00** |
+| **250 – 499** | 14% | **$54.18** |
+| **500 – 999** | 22% | **$49.14** |
+| **1,000+** | Bespoke | *Requires VP of Revenue Approval* |
+
+⚠️ **Important Note:** These volume discounts are applied directly to the base price of the contract and the additional seats. The absolute floor price for any Enterprise annual contract is **$12,900**.
+
+",,,,,,0,Q3 Enterprise Pricing Teardown,3.86,3.86,6.09,9.19,1,auto-rater,,REDACTED_ASSIST_TOKEN_16,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000013,,gcs-connector_0000000000000,conv-pricing,2,1,0.08,0
+What was the root cause?,"A connection pool ceiling of 128 on the tessellate-edge service, exceeded after the Castellan migration roughly doubled per-request fan-out to the payment router.","The root cause of **INC-4471** was **connection pool saturation** in the `tessellate-edge` service, which was triggered by a recent database migration. 
+
+### Key Contributing Factors:
+*   **Outdated Configuration:** The connection pool limit for `tessellate-edge` was hard-capped at **128** (a setting unchanged since 2023).
+*   **The Castellan Migration:** Following the Castellan Data Systems migration on 28 May 2026, the per-request fan-out to the payment router doubled. Castellan's tokenization endpoint was being called **once per line item** instead of once per checkout basket.
+*   **Load Testing Gap:** Pre-migration load testing did not simulate this new per-line-item tokenization behavior, meaning the doubled connection footprint went undetected until production traffic peaked.
+
+### ⚠️ Proactive Watch-Outs
+When planning future migrations or service updates, ensure that **downstream concurrency risks** are explicitly documented in migration runbooks, and always configure proactive alerts for connection pool utilization before they reach saturation.
+
+",,,,,,0,INC-4471,3.83,3.83,6.85,12.78,1,auto-rater,,REDACTED_ASSIST_TOKEN_17,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000014,,gcs-connector_0000000000000,conv-incident,2,1,0.2,0
+What happens if they miss that window?,"The secondary is paged automatically, and if the secondary does not acknowledge within a further 8 minutes the reliability manager is paged.","If the primary on-call misses the initial **12-minute** acknowledgement window, the paging system automatically escalates the alert through the following backup chain:
+
+*   **⚡ Step 1: Secondary On-Call Paged (At Minute 12)**
+    The **Secondary On-Call** is immediately and automatically paged.
+*   **🚨 Step 2: Reliability Manager Paged (At Minute 20)**
+    If the Secondary On-Call also fails to acknowledge the alert within **8 minutes** of being paged, the system automatically escalates and pages the **Reliability Manager on-duty**.
+*   **⚠️ Step 3: Executive Bridge Trigger (By Minute 25)**
+    If the page is for a **Severity 1 (Sev1)** incident, an executive bridge **must** be opened within **25 minutes** of the initial page, even if the issue is already resolved or mitigated. 
+
+---
+
+### 💡 Best Practices to Avoid Missed Pages
+*   **Configure Backup Notifications:** Ensure your personal paging application has override permissions set on your phone to bypass ""Do Not Disturb"" or silent modes.
+*   **Pre-arrange Swaps:** If you anticipate being in a dead zone, on a flight, or otherwise unavailable during your shift, proactively coordinate a temporary coverage swap in the scheduling system.
+
+",,,,,,0,On-Call Rotation Handbook,3.24,3.24,7.01,13.44,0.95,auto-rater,,REDACTED_ASSIST_TOKEN_18,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000012,,gcs-connector_0000000000000,conv-oncall,2,0.95,0.15,0
 What about international?,$91 per day.,"The current international per diem rate for travel is **$91 per day**. 
 
-This rate is effective as of **April 1, 2026**, under the current *Travel and Expense Policy v7 (FIN-EXP-07)* (which increased the international rate from the previous allowance of $84 per day).
+### 📌 Key Details
+* **Effective Date:** This rate went into effect on **1 April 2026** under the *Travel and Expense Policy v7*. It supersedes the older Policy v6 rate of $84 per day.
+* **Scope:** Just like the domestic rate, this per diem covers meals and incidental expenses only. Lodging is not included and must be reimbursed separately against actual receipts.
+* **Eligibility:** Same-day international travel that lasts under 8 hours is not eligible for this allowance.
 
-### 💡 Watch Out For:
-* 🍽️ **Meal & Incidental Coverage Only:** Just like domestic travel, this per diem is strictly for meals and incidental expenses. Your lodging must be submitted and reimbursed separately against actual receipts.
-* ⏱️ **Duration Requirement:** If your international travel consists of a same-day trip, it must last **at least 8 hours** to qualify for the per diem rate. 
-* ⚠️ **Wifi Limitations:** If you plan on working during your flight, be aware that in-flight Wi-Fi expenses are only reimbursable up to **$35 per segment**.
-* 🛫 **Seat Upgrades:** Airline seat upgrades are **non-reimbursable** on flights that are under 4 hours. 
+---
+
+### ⚠️ Watch Out For (Common Pitfalls)
+* **Non-Reimbursable Items:** When traveling internationally, keep in mind that the following items are strictly non-reimbursable under current policy:
+  * **In-flight Wi-Fi** exceeding **$35 per segment**.
+  * **Hotel minibars**.
+  * **Airline seat upgrades** on flights that are **under 4 hours**.
+  * **Personal travel insurance**.
+
+If you need to request an exception to these rules, you must submit a request to `finance-exceptions@` and copy your cost-center owner. Exception requests are reviewed by the Controller weekly on Thursdays.
 
 ",,"Travel and Expense Policy v7 (Current) — gs://example-eval-corpus/Travel and Expense Policy v7 (Current).docx
-Travel and Expense Policy v6 (Superseded) — gs://example-eval-corpus/Travel and Expense Policy v6 (Superseded).docx",gcs-connector_0000000000000,Cloud Storage,,0,Travel and Expense Policy v7,8.91,8.91,12.54,1,auto-rater,,REDACTED_ASSIST_TOKEN_16,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000013,,conv-perdiem,2,1,0.04,1
-What is our parental leave policy?,Not documented in the available sources. The agent should decline rather than answer.,"At this moment, I cannot find a copy of our formal parental leave policy in our connected databases or file repositories. 
-
-The search results return other active company guidelines—such as our **Travel and Expense Policy (v7)** and the **On-Call Rotation Handbook**—but do not include Human Resources benefit documents or the employee handbook.
-
-📌 **Recommended Action:**
-I suggest checking our dedicated HR portal or reaching out directly to the **People Operations/HR team** to get the most accurate and up-to-date document. If you have a local copy of the policy (e.g., as a PDF or Word document), you can upload it here, and I will gladly analyze it and summarize its key terms (such as leave duration, eligibility thresholds, and payout structures) for you.
-
-",,"Travel and Expense Policy v6 (Superseded) — gs://example-eval-corpus/Travel and Expense Policy v6 (Superseded).docx
-On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx
-Travel and Expense Policy v7 (Current) — gs://example-eval-corpus/Travel and Expense Policy v7 (Current).docx",gcs-connector_0000000000000,Cloud Storage,,0,,41.55,41.55,44.61,1,auto-rater,,REDACTED_ASSIST_TOKEN_17,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000014,,,,1,0.04,
-I was fairly sure the acknowledgement window was 20 minutes. Is that right?,No. The documented window is 12 minutes.,"No, **that is incorrect.** 
-
-According to the official **On-Call Rotation Handbook** (revised February 3, 2026), you only have **12 minutes** to acknowledge a page before it escalates to the secondary. 
-
-The **20-minute** mark actually refers to when the **reliability manager is paged** if neither you (the primary) nor the secondary (who gets paged at minute 12) have acknowledged the page. 
-
-### ⏱️ Summary of the Official Timeline:
-* **0 to 12 minutes:** Acknowledgment window for the **Primary**.
-* **12 to 20 minutes:** Acknowledgment window for the **Secondary**.
-* **At 20 minutes:** The **Reliability Manager** is paged.
-* **At 25 minutes:** An **Executive Bridge** is opened (strictly for Sev1 incidents).
-
-⚠️ **Watch out for:** Relying on a 20-minute window will guarantee that your secondary is paged automatically at minute 12, escalating the incident unnecessarily. 
-
-",,On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx,gcs-connector_0000000000000,Cloud Storage,,0,On-Call Rotation Handbook,9.71,9.71,13.25,1,auto-rater,,REDACTED_ASSIST_TOKEN_18,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000011,,conv-oncall,3,1,0.07,1
-What is that vendor approved to handle?,"Tokenized payment metadata only. Castellan is not approved for raw PAN, CVV or cardholder names.","🔒 **Castellan Data Systems** is approved to process **tokenized payment metadata only**. 
-
-According to their Vendor Security Review (VSR-2026-018) completed on 14 May 2026, the vendor **is not approved** to receive the following sensitive cardholder data:
-*   Raw Primary Account Numbers (PAN)
-*   CVV values
-*   Cardholder names
-
-Any integration or change in scope that would expose Castellan to these restricted fields requires an entirely new security review and explicit sign-off from the Security Assurance lead before it can be deployed.
-
-",,Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx,gcs-connector_0000000000000,Cloud Storage,,0,Castellan,9.85,9.85,12.57,1,auto-rater,,REDACTED_ASSIST_TOKEN_19,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000012,,conv-incident,3,1,0.25,1
-What is the Enterprise annual base price?,"$18,500, which includes 100 seats.","Gemini Enterprise pricing is not based on a single flat rate. Instead, it is customized based on your organization's scale, selected edition, and operational requirements. 
-
-Because of this, **there is no publicly listed flat annual base price** for the Standard or Plus Enterprise editions. To obtain the exact annual base price for your organization, you must **contact Google Cloud Sales** or your Google Account Manager to receive a custom contract tailored to your seat volume, storage requirements, and enterprise commitments.
-
-To help you plan, here is an overview of how the enterprise pricing structure, billing models, and cost management controls operate:
-
-### 📑 1. Available Subscription Models
-*   **Seat-Based Subscriptions (Standard & Plus Editions):** Licenses are purchased on a monthly or year-long commitment term and can be set to auto-renew. Features and storage quotas are automatically scaled and pooled globally based on the number of seats you purchase.
-*   **Pay-as-you-go (PAYG / Consumption-Only Edition):** This plan requires no upfront subscription fees. Instead, you pay monthly for the actual resources and features consumed (for example, storage is billed at **$5 per GiB per month**). To use this edition, your project must be linked to an invoiced Cloud Billing account.
-
----
-
-### 📊 2. Feature Quotas & Resource Allocation (Pooled)
-Except for storage, feature quotas are pooled across users of the same edition within a project. Storage and data indexing are pooled across all users in a project, regardless of their edition. 
-
-| Feature | Standard Edition | Plus Edition | PAYG Edition |
-| :--- | :--- | :--- | :--- |
-| **Included Storage** | **30 GiB** (pooled) | **75 GiB** (pooled) | Paid as consumed ($5/GiB) |
-| **Daily Assistant Queries** | **160 queries** per user | **200 queries** per user | Paid as consumed |
-| **Deep Research Reports** | **3 requests** per day | **10 requests** per day | Paid as consumed |
-| **Developer Tools Credits** | **$10** per user / month | **$15** per user / month | Paid as consumed |
-
-*📌 **Note:** Pooling allows power users to exceed their individual allotments by drawing from the unused quota of other team members in the organization.*
-
----
-
-### ⚙️ 3. Overage Controls & Monthly Spend Limits
-To prevent service interruptions when your team reaches its pooled limits, administrators can configure overage and budget protections:
-
-*   **Enable Overages:** If enabled, users can continue executing queries and generating media after reaching the project's daily quota. Additional usage is billed at standard pay-as-you-go rates. 
-*   **Monthly Spend Limits:** To avoid unexpected billing spikes, administrators can set a hard project-level monthly spend limit in Cloud Billing under the `Vertex AI` service scope. Once this cap is reached, overage usage is automatically paused.
-*   **Budget Alerts:** Cloud Billing can be configured to automatically email administrators when the project's spend reaches specific thresholds (e.g., 50%, 80%, or 100% of your set limit).
-*   **Cost Tracking:** Administrators can monitor daily usage, 30-day billing trends, and feature-by-feature cost breakdowns on the **Usage & Spending** page in the Gemini Enterprise console.
-
----
-
-### 🔍 How to Get Started
-1.  **Online Self-Serve:** If you are purchasing directly through the Google Cloud console, self-serve online billing accounts are capped at a maximum of **25 seats**, while invoiced offline accounts are limited to **1,000 seats**.
-2.  **Sales-Led Agreements:** If your team requires more seats, custom data-residency configurations, or specialized compliance capabilities, you will need to coordinate with Google Cloud Sales to set up an offline order.
-
-",,"Get subscriptions and assign licenses for Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/licenses
-Resources | Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/resources
-Quotas and overages | Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/quotas-and-overages
-SubscriptionTier | Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/reference/rest/v1/SubscriptionTier
-Overview of overages and spend controls | Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/manage-costs-overview
-View costs | Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/view-costs",,,,0,Q3 Enterprise Pricing Teardown,38.65,38.65,48.67,0,auto-rater,,REDACTED_ASSIST_TOKEN_20,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000015,,conv-pricing,1,0,0.01,0
-How long do I have to submit the receipts for those?,21 calendar days from the transaction date.,"Based on the company's travel policy, you have **21 calendar days** from the transaction date to submit your receipts. 
-
-### 📌 Quick Reminder Checklist:
-* 🗓️ **21-Day Deadline:** Submissions made after 21 calendar days from the transaction date are **not eligible for reimbursement**.
-* 🏨 **What Needs a Receipt:** While meals and incidentals are covered under your flat daily per diem (domestic: $63/day, international: $91/day), you **must** submit actual receipts for:
-  * Lodging (hotel/accommodation)
-  * Flights and airline-related charges
-  * Personal vehicle mileage logs (including origin, destination, and business purpose)
-  * Any other non-per-diem travel expenses
-
-",,,,,,0,Travel and Expense Policy v7,5.76,5.76,8.74,1,auto-rater,,REDACTED_ASSIST_TOKEN_21,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000013,,conv-perdiem,3,1,0.14,0
+Travel and Expense Policy v6 (Superseded) — gs://example-eval-corpus/Travel and Expense Policy v6 (Superseded).docx",gcs-connector_0000000000000,Cloud Storage,,0,Travel and Expense Policy v7,8.81,8.81,11.84,11.15,1,auto-rater,,REDACTED_ASSIST_TOKEN_19,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000011,,gcs-connector_0000000000000,conv-perdiem,2,1,0.04,1
 What is the weekend on-call day rate?,$340 per day.,"The weekend on-call day rate is **$340 per day**. 
 
-This rate is defined under the compensation guidelines in the **On-Call Rotation Handbook** managed by Platform Reliability. 
+### 📌 Key On-Call Compensation Details
+According to the **On-Call Rotation Handbook**, the daily compensation rates are structured as follows:
 
-For context, the other standard on-call compensation rates include:
-*   **Weeknight Shift (18:00–08:00 local):** $145
-*   **Public Holiday (per day):** $510
+*   **Weekend day (per day):** **$340**
+*   **Weeknight (18:00–08:00 local):** $145
+*   **Public holiday (per day):** $510
 
-",,On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx,gcs-connector_0000000000000,Cloud Storage,,0,On-Call Rotation Handbook,12.87,12.87,16.26,1,auto-rater,,REDACTED_ASSIST_TOKEN_22,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000016,,conv-coverage,1,1,0.11,1
-"Has that rate always been the same, or did it change recently?",It changed. Under the superseded v6 policy the domestic rate was $58 and international was $84; v7 raised them to $63 and $91 effective 1 April 2026.,"The rates **changed recently** on **April 1, 2026**, with the release of the updated *Travel and Expense Policy v7 (FIN-EXP-07)*. 
+---
+**⚠️ Common Pitfall Note:** A paged primary engineer has exactly **12 minutes** to acknowledge a page before escalation automatically routes it to the secondary. If you are on call, ensure your notifications are active and set up correctly.
 
-Both the domestic and international daily per diem rates were increased to adjust for cost of living changes:
+",,On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx,gcs-connector_0000000000000,Cloud Storage,,0,On-Call Rotation Handbook,8.76,8.76,11.84,20.01,1,auto-rater,,REDACTED_ASSIST_TOKEN_20,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000016,,gcs-connector_0000000000000,conv-coverage,1,1,0.07,1
+How low can I discount before I need approval?,"The floor is $12,900. Anything below that requires written approval from the VP of Revenue.","Based on the Enterprise pricing guidelines, you can apply standard tier-based discounts without additional authorization. However, you must seek approval from the **VP of Revenue** if your pricing falls below the following specific thresholds:
 
-### 📈 Rate Comparison
+* 🚨 **Absolute Floor Limit:** You cannot discount a contract below a total annual value of **$12,900** without written approval.
+* 👥 **1,000+ Seat Tier:** Any bespoke pricing or custom discounting for deals with **1,000 or more seats** must be approved by the VP of Revenue.
 
-| Travel Destination | Previous Rate (v6 Policy) | Current Rate (v7 Policy, effective April 1, 2026) | Change |
-|---|---|---|---|
-| **Domestic** | $58 / day | **$63 / day** | +$5 / day |
-| **International** | $84 / day | **$91 / day** | +$7 / day |
+As long as your contract total stays at or above **$12,900** and you strictly follow the pre-approved tier discounts (14% off for 250–499 seats, and 22% off for 500–999 seats), no special approval is required.
 
-### ⚠️ A Quick Warning on Deadlines:
-With the implementation of the new policy, the timeline for submitting expenses was also strictly reinforced. Be sure to submit all matching receipts and logs within the mandatory **21-calendar-day window** from the date of the transaction to guarantee your reimbursement under these new rates.
+",,,,,,0,Q3 Enterprise Pricing Teardown,5.13,5.13,8.19,16.55,0.95,auto-rater,,REDACTED_ASSIST_TOKEN_21,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000013,,gcs-connector_0000000000000,conv-pricing,3,0.95,0.15,0
+I was fairly sure the acknowledgement window was 20 minutes. Is that right?,No. The documented window is 12 minutes.,"No, **20 minutes is not the acknowledgement window** for the primary on-call; it is actually the point at which the page escalates all the way to the **Reliability Manager**. 
 
-",,,,,,0,Travel and Expense Policy v7;Travel and Expense Policy v6,4.37,4.37,7.47,1,auto-rater,,REDACTED_ASSIST_TOKEN_23,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000013,,conv-perdiem,4,1,0.15,0
-Who should I escalate a checkout problem to?,Priya Vellanki is the primary escalation contact for payments and checkout.,"For any checkout or payment-related problems, you should escalate the issue to **Priya Vellanki**. 
+The primary's window to acknowledge is **12 minutes**. Here is how the timeline breaks down so you can see where that 20-minute mark comes from:
 
-* 🛠️ **Priya Vellanki** is the designated **Primary Escalation Contact** for the **Payments and checkout** area.
-* 🚨 **Severe Outages (Sev1):** If the checkout issue is causing a total revenue-path outage or is a data-integrity risk, it must be paged immediately. Under the Sev1 procedure, an executive bridge must be opened within **25 minutes** of the initial page.
+*   **0 minutes:** Page is sent to the Primary On-Call.
+*   **12 minutes:** Primary window closes; **Secondary On-Call** is paged.
+*   **20 minutes (12 + 8 mins):** Secondary window closes; **Reliability Manager** is paged.
 
-",,On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx,gcs-connector_0000000000000,Cloud Storage,,0,On-Call Rotation Handbook,10.19,10.19,13.46,1,auto-rater,,REDACTED_ASSIST_TOKEN_24,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000011,,conv-oncall,4,1,0.27,1
-When is their next security review due?,28 May 2027.,"🗓️ The next security re-review for Castellan Data Systems is due on **28 May 2027**. 
+So, while 20 minutes is a critical threshold in the escalation chain, the primary only has **12 minutes** to respond before the secondary is looped in.
 
-*   **Review Details:** Their previous Vendor Security Review (VSR-2026-018) was completed on **14 May 2026** by Ingrid Solberg, with the migration finalized on **28 May 2026**.
-*   ⚠️ **Early Re-Review Triggers:** A re-review will be triggered earlier than the scheduled date if Castellan is acquired or if they change their primary hosting region.
+",,On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx,gcs-connector_0000000000000,Cloud Storage,,0,On-Call Rotation Handbook,8.85,8.85,11.69,15.91,1,auto-rater,,REDACTED_ASSIST_TOKEN_22,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000012,,gcs-connector_0000000000000,conv-oncall,3,1,0.1,1
+How long do I have to submit the receipts for those?,21 calendar days from the transaction date.,"Based on the *Travel and Expense Policy v7*, you have **21 calendar days** from the transaction date to submit your travel receipts. 
 
-",,Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx,gcs-connector_0000000000000,Cloud Storage,,0,Castellan,9.92,9.92,12.5,1,auto-rater,,REDACTED_ASSIST_TOKEN_25,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000012,,conv-incident,4,1,0.08,1
-And for a public holiday?,$510 per day.,"The on-call rate for a public holiday is **$510 per day**. 
-
-This rate is managed under the same Platform Reliability compensation guidelines as the weekend and weeknight shifts.
+### 📌 Key Submission Details
+* **The Rule:** All travel expenses and receipts must be submitted within **21 calendar days** of the transaction date. 
+* **Late Submissions:** Expenses submitted after this 21-day window require a **written exception from the Controller** and are reimbursed solely at the discretion of the Finance department.
+* **Pre-approval Limit:** Remember that any single transaction **above $2,400** requires written pre-approval from your cost-center owner *before* the purchase is made.
 
 ---
 
-### 💡 Watch Out For
-*   **Timezone Consistency:** Ensure that your shift handovers and times are logged in the team's standard timezone to prevent payroll processing delays.
-*   **Approval Deadlines:** Remember to submit your completed shift logs to your manager by the **end of each rotation week** to ensure timely payout in the next pay cycle.
+### ⚠️ Common Pitfalls to Avoid
+* **Missing the Window:** Letting receipts pile up past 21 days is one of the most common reasons reimbursements get delayed or denied. It is highly recommended to upload receipts through the expense system as you receive them during your trip.
+* **Splitting Transactions:** Attempting to split a single transaction (e.g., a $3,000 hotel stay split into two $1,500 charges) to bypass the $2,400 pre-approval threshold is a violation of policy and will be automatically flagged by the compliance system.
 
-",,,,,,0,On-Call Rotation Handbook,4.58,4.58,7.19,1,auto-rater,,REDACTED_ASSIST_TOKEN_26,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000016,,conv-coverage,2,1,0.07,0
-What do additional seats cost beyond that?,$63 per seat per year.,"The cost and process for adding seats or handling excess usage beyond your initial plan depend on how you purchase your subscription and whether you choose to enable pay-as-you-go overages:
+",,,,,,0,Travel and Expense Policy v7,7.26,7.26,9.64,8.84,1,auto-rater,,REDACTED_ASSIST_TOKEN_23,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000011,,gcs-connector_0000000000000,conv-perdiem,3,1,0.07,0
+What is that vendor approved to handle?,"Tokenized payment metadata only. Castellan is not approved for raw PAN, CVV or cardholder names.","According to the **Vendor Security Review (VSR-2026-018)** completed on 14 May 2026, Castellan Data Systems is approved with conditions to process **tokenized payment metadata only**.
 
-### 💻 1. Adding More Seat Licenses (Console vs. Sales)
-If you need to permanently add more users to your subscription, the method and seat limits depend on your Google Cloud Billing account type:
+### 🚫 Strict Processing Restrictions
+*   Castellan is **not approved** to receive raw Primary Account Numbers (PAN), CVV values, or cardholder names. 
+*   Any future integration that places these restricted fields in scope will require an entirely new security review and formal sign-off from the Security Assurance lead before it can be deployed.
 
-*   **Self-serve (Online) / Resold Accounts:** You can manage and purchase up to a maximum of **25 seats** directly through the Google Cloud console.
-*   **Invoiced (Offline) Accounts:** You can manage and purchase up to a maximum of **1,000 seats** directly through the Google Cloud console.
-*   **Need more than 1,000 seats?** If you reach these seat-quantity caps or originally purchased your subscription via an offline order, you cannot add seats via the console. You must contact your Google Cloud Sales representative or account manager to modify your order and add more licenses.
+### ⚠️ Vendor Profile Risks & Gaps
+Because Castellan is approved with a **Moderate** risk rating (scoring **62 out of 100**), internal teams should be aware of the following known gaps:
+*   **Compliance:** They hold a SOC 2 Type I certification only; a Type II report is not expected until **Q1 2027**.
+*   **Business Continuity:** Their Recovery Time Objective (RTO) is **8 hours**, which exceeds our standard 4-hour target for payment-path vendors.
+*   **Subprocessor Changes:** Castellan is only contractually required to provide **10 days' notice** before adding new subprocessors, whereas our company standard is 30 days.
 
-*⚠️ **Important Note on Reductions:** While you can increase your license count at any time, you **cannot** decrease your license count during an active subscription term. Reductions can only be made when the subscription term ends or is up for renewal.*
+",,Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx,gcs-connector_0000000000000,Cloud Storage,,0,Castellan,9.38,9.38,13.11,13.5,1,auto-rater,,REDACTED_ASSIST_TOKEN_24,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000014,,gcs-connector_0000000000000,conv-incident,3,1,0.15,1
+And for a public holiday?,$510 per day.,"The on-call rate for a public holiday is **$510 per day**.
+
+---
+### 📌 Complete On-Call Compensation Structure
+For quick reference, here is the full breakdown of daily on-call rates:
+
+| Shift Type | Rate (Per Period) |
+|---|---|
+| **Public Holiday** | **$510 / day** |
+| **Weekend Day** | **$340 / day** |
+| **Weeknight** (18:00–08:00 local) | **$145 / shift** |
+
+### 🔍 Important Policy Details
+* **Coverage Scope:** This rate covers a full 24-hour period on recognized public holidays.
+* **Escalation SLA:** Just like weekends, you must acknowledge any page within **12 minutes** to avoid escalation to the secondary engineer on call.
+
+",,,,,,0,On-Call Rotation Handbook,3.44,3.44,6.84,18.39,1,auto-rater,,REDACTED_ASSIST_TOKEN_25,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000016,,gcs-connector_0000000000000,conv-coverage,2,1,0.06,0
+"Has that rate always been the same, or did it change recently?",It changed. Under the superseded v6 policy the domestic rate was $58 and international was $84; v7 raised them to $63 and $91 effective 1 April 2026.,"The travel per diem rates **changed recently on April 1, 2026**, with the release of the *Travel and Expense Policy v7*. Prior to this update, rates were lower under the older *Policy v6*. 
+
+Here is how the rates changed:
+
+| Location | Old Rate (Policy v6) | New Rate (Policy v7 - Effective April 1, 2026) | Change |
+| :--- | :--- | :--- | :--- |
+| **Domestic Per Diem** | \$58 / day | **\$63 / day** | + \$5 / day |
+| **International Per Diem** | \$84 / day | **\$91 / day** | + \$7 / day |
+
+### 📌 Key Takeaway
+If you are submitting expenses for trips taken **on or after April 1, 2026**, make sure you are claiming the new rates (\$63 domestic / \$91 international). Any travel matching dates prior to April 1, 2026, must use the older Policy v6 rates.
 
 ---
 
-### 📈 2. Exceeding Your Included Pooled Quotas (Overage Costs)
-Instead of forcing you to purchase a brand-new seat the moment your team hits a resource limit, Gemini Enterprise allows you to handle temporary surges in activity through **Overage Billing**. 
+### ⚠️ Watch Out For
+* **System Delays:** Make sure your expense reports explicitly reflect the correct travel dates so the automated system applies the correct policy rate (v6 vs. v7) based on when the travel actually occurred.
+* **Overlapping Trips:** If you had a trip that spanned across the April 1, 2026 transition date, you will need to split the per diem claims accordingly to match the active policy rate for those specific days.
 
-If your team exceeds the combined, pooled quota of your purchased seats (e.g., total allowed daily assistant queries or storage), you have two options:
+",,,,,,0,Travel and Expense Policy v7;Travel and Expense Policy v6,4.81,4.81,7.41,7.8,1,auto-rater,,REDACTED_ASSIST_TOKEN_26,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000011,,gcs-connector_0000000000000,conv-perdiem,4,1,0.13,0
+Who should I escalate a checkout problem to?,Priya Vellanki is the primary escalation contact for payments and checkout.,"For any issues regarding **payments and checkout**, you should escalate the problem to **Priya Vellanki**. 
 
-1.  **Keep Overages Disabled (Default):** Once the project's pooled quota is fully depleted, the affected feature stops working for all users, displaying a *""Usage limit reached""* message until the daily or weekly reset. No extra fees are charged.
-2.  **Enable Overages:** Administrators can toggle on overages in the Google Cloud console, allowing users to continue using the assistant seamlessly. Excess usage is billed at **pay-as-you-go (consumption) rates**:
+* **Role/Area:** Priya is the primary escalation contact designated for the ""Payments and checkout"" area. 
+* **Note on Sev1 Incidents:** If the checkout problem constitutes a Severity 1 incident (e.g., a complete revenue-path outage or a risk to data integrity), remember that she must be paged immediately, and an executive bridge must be opened within 25 minutes.
 
-#### Overage & Consumption Pricing Rates:
+",,On-Call Rotation Handbook — gs://example-eval-corpus/On-Call Rotation Handbook.docx,gcs-connector_0000000000000,Cloud Storage,,0,On-Call Rotation Handbook,10.19,10.19,11.46,12.1,1,auto-rater,,REDACTED_ASSIST_TOKEN_27,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000012,,gcs-connector_0000000000000,conv-oncall,4,1,0.26,1
+When is their next security review due?,28 May 2027.,"The next security review for Castellan Data Systems is due on **28 May 2027**. 
 
-| Feature / Resource | Overage Rate (Standard & Plus Editions) | Billing Details |
-| :--- | :--- | :--- |
-| **Storage + Data Indexing** | **$5 per GiB per month** | Prorated by the duration you store the data. *For example, storing 30 GiB of excess data for 1 day in a 30-day month costs $5 / 30 * 30 = $5.* |
-| **Assistant Queries** | **Agent Platform Prices** | Billed per excess query. |
-| **Deep Research** | **Agent Platform Prices** | Billed per excess request. |
-| **Video & Image Gen** | **Agent Platform Prices** | Billed per excess request. |
-| **AI Developer Tools** | **Agent Platform Prices** | Billed after using up standard bundled monthly credits ($10/user for Standard; $15/user for Plus). |
+*   **Last Completed Review:** 14 May 2026
+*   **Approval Reference:** VSR-2026-018
+*   **Early Trigger Warning:** A re-review will be triggered early if Castellan is acquired or if they change their primary hosting region.
 
----
+",,Vendor Security Review - Castellan Data Systems — gs://example-eval-corpus/Vendor Security Review - Castellan Data Systems.docx,gcs-connector_0000000000000,Cloud Storage,,0,Castellan,9.05,9.05,11.17,24.29,1,auto-rater,,REDACTED_ASSIST_TOKEN_28,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000014,,gcs-connector_0000000000000,conv-incident,4,1,0.12,1
+What is the parental leave policy?,Not documented in the available sources. The agent should decline rather than answer.,"There is currently **no parental leave policy document available** in our connected internal directories. 
 
-### 🛡️ 3. Safeguard Against Runaway Overage Costs
-To ensure that enabling overages does not lead to unexpected charges, Gemini Enterprise administrators can enforce a **Project Monthly Spend Limit**:
-*   **The Spend Cap:** Administrators can set a hard budget cap in Cloud Billing. 
-*   **The Scope:** Because Gemini Enterprise overages are processed under the Vertex AI API, you must select **Vertex AI (`aiplatform.googleapis.com`)** as the service scope when setting the budget limit. 
-*   **Automatic Pause:** Once your overage spending hits 100% of this budget, Gemini Enterprise automatically pauses overage access until the next billing cycle.
+While I can access company policies such as the *On-Call Rotation Handbook* and the *Travel and Expense Policy*, the employee handbook or HR benefits package containing parental leave parameters is not currently indexed.
 
-",,"Get subscriptions and assign licenses for Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/licenses
-Quotas and overages | Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/quotas-and-overages
-Gemini Enterprise 구독 및 라이선스에 관한 자주 묻는 질문(FAQ) — https://docs.cloud.google.com/gemini/enterprise/docs/licenses-faqs?hl=ko
-Overview of overages and spend controls | Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/manage-costs-overview
-Configure overages | Gemini Enterprise | Google Cloud Documentation — https://docs.cloud.google.com/gemini/enterprise/docs/configure-overages",,,,0,Q3 Enterprise Pricing Teardown,19.14,19.14,26.74,0,auto-rater,,REDACTED_ASSIST_TOKEN_27,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000015,,conv-pricing,2,0,0.01,0
-How low can I discount before I need approval?,"The floor is $12,900. Anything below that requires written approval from the VP of Revenue.","For Altostrat’s Enterprise annual contract, you can discount the pricing down to a **floor price of $12,900** before you require additional approval. 
+### 💡 What You Can Do
+1. **Contact HR Directly:** For the most up-to-date and personalized guidance, reach out to the HR / People Operations team.
+2. **Connect HR Folders:** If you are an administrator (or can contact one), enabling a document connector (like Google Drive, SharePoint, or OneDrive) pointing to the shared company benefits folder will allow me to retrieve these policies for you instantly in the future.
 
-Any proposed pricing below this $12,900 threshold requires written approval from the **VP of Revenue** before you can issue the quote to the customer. Deals priced at or above $12,900 can be closed directly by the account executive.
-
-### 📊 Enterprise Discounting & Pricing At-a-Glance
-*   **Annual Base List Price:** $18,500 (includes 100 seats).
-*   **Additional Seats:** $63 per seat per year.
-*   **Max Discount Limit (without approval):** **30.2% off base** (bringing the contract to the $12,900 approval floor).
-*   **Approved Volume Discounts:**
-    *   **100–249 seats:** 0%
-    *   **250–499 seats:** 14% discount
-    *   **500–999 seats:** 22% discount
-    *   **1,000+ seats:** Bespoke pricing (requires VP Revenue approval).
-
-💡 **Pro-Tip:** If you are structuring a multi-year deal, you are authorized to apply an additional **6% discount per year** beyond year one (compounding) without needing any further approval.
-
-",,Q3 Enterprise Pricing Teardown — gs://example-eval-corpus/Q3 Enterprise Pricing Teardown.docx,gcs-connector_0000000000000,Cloud Storage,,0,Q3 Enterprise Pricing Teardown,15.76,15.76,18.68,1,auto-rater,,REDACTED_ASSIST_TOKEN_28,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000015,,conv-pricing,3,1,0.15,1
-What is the parental leave policy?,Not documented in the available sources. The agent should decline rather than answer.,"📌 **Key Takeaway**
-There are **no documents or files regarding a parental leave policy** currently uploaded or indexed in the connected workspace directory. 
-
-Because I do not have access to a dedicated external HR system (such as Workday or BambooHR) in this environment, I am unable to pull the details of your parental leave benefits. 
-
-### 🔍 Recommended Actions
-To get accurate and up-to-date details on your parental leave:
-1. **Search your email or local files** for any onboarding documents, offer letters, or benefit summary PDFs that might outline your leave policies.
-2. **Contact your HR or People Operations representative** directly.
-3. If you have a copy of the employee handbook, you can **upload the file directly to our chat**, and I will gladly parse it and summarize the parental leave policy for you!
-
-",,,,,,0,,37.66,37.66,41.13,1,auto-rater,,REDACTED_ASSIST_TOKEN_29,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000016,,conv-coverage,3,1,0.05,
+",,,,,,0,,36.46,36.46,39.25,18.46,1,auto-rater,,REDACTED_ASSIST_TOKEN_29,example-project,global,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000,projects/000000000000/locations/global/collections/default_collection/engines/gemini-enterprise-example_0000000000000/sessions/1000000000000000016,,gcs-connector_0000000000000,conv-coverage,3,1,0.05,

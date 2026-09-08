@@ -24,6 +24,7 @@ import {ScorerRunResult, ScoringRequest, summarizeScorerResults} from '../scorin
 import {ScorerRegistry} from '../scoring/scorer.registry';
 
 import {EvalBackendService} from './eval-backend.service';
+import {resolveRowConfig} from './row-config.util';
 import {StateService} from './state.service';
 import {TraceCollector} from './trace-collector';
 
@@ -98,23 +99,26 @@ export class EvalService {
       sessionContext?: SessionContext): Promise<ResultRow> {
     const config = this.stateService.getCurrentConfig();
 
+    // Resolve the per-row `data_stores` override, falling back to the global run
+    // configuration when the cell is absent.
+    const eff = resolveRowConfig(row, config);
 
     const toolsSpec: NonNullable<AssistRequestBody['toolsSpec']> = {};
 
-    if (config.selectedDataStores && config.selectedDataStores.length > 0) {
+    if (eff.dataStores.length > 0) {
       toolsSpec.vertexAiSearchSpec = {
-        dataStoreSpecs: config.selectedDataStores.map(
+        dataStoreSpecs: eff.dataStores.map(
             ds => ({
               dataStore: `projects/${config.projectId}/locations/${
                   config.region}/collections/default_collection/dataStores/${
                   ds}`
             }))
       };
-    } else if (!config.enableWebSearch) {
+    } else if (!eff.enableWebSearch) {
       toolsSpec.vertexAiSearchSpec = {};
     }
 
-    if (config.enableWebSearch) {
+    if (eff.enableWebSearch) {
       toolsSpec.webGroundingSpec = {};
     }
 
@@ -313,7 +317,8 @@ export class EvalService {
         region,
         engineId,
         session: sessionInfo?.session,
-        turnId: sessionInfo?.turnId
+        turnId: sessionInfo?.turnId,
+        dataStoresUsed: eff.dataStoresLabel
       };
 
     } catch (error) {
@@ -343,7 +348,8 @@ export class EvalService {
         region,
         engineId,
         session: sessionInfo?.session,
-        turnId: sessionInfo?.turnId
+        turnId: sessionInfo?.turnId,
+        dataStoresUsed: eff.dataStoresLabel
       };
     }
   }
