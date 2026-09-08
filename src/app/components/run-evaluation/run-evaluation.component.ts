@@ -27,7 +27,7 @@ import {ResultRow} from '../../models/result-row.model';
 import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
 import {ScorerRegistry} from '../../scoring/scorer.registry';
 import {CsvService} from '../../services/csv.service';
-import {EvalService} from '../../services/eval.service';
+import {DEFAULT_MAX_TTLT_SECONDS, EvalService} from '../../services/eval.service';
 import {StateService} from '../../services/state.service';
 import {ConfigFormComponent} from '../shared/config-form/config-form.component';
 import {ColumnDef, CsvTableComponent} from '../shared/csv-table/csv-table.component';
@@ -39,11 +39,19 @@ const MAX_CONCURRENT_REQUESTS_FOR_EVALUATION = 5;
 
 /** The columns shown before the scores, whichever scorers ran. */
 const BASE_COLUMNS: readonly ColumnDef[] = [
-  {header: 'Query', key: 'query', truncate: true},
+  {
+    header: 'Query',
+    key: 'query',
+    truncate: true,
+    warnKey: 'latencyExceededBy',
+    warnTooltip:
+        `Latency exceeded the ${DEFAULT_MAX_TTLT_SECONDS}s budget by {value}s`,
+  },
   {header: 'Golden', key: 'golden', truncate: true},
   {header: 'Fetched', key: 'fetched', type: 'markdown', truncate: true},
   {header: 'Sources', key: 'citedSources', truncate: true},
   {header: 'Connectors', key: 'citedConnectors', truncate: true},
+  {header: 'Requested Connectors', key: 'dataStoresUsed', truncate: true},
   {header: 'Conversation', key: 'conversationId', truncate: true},
   {header: 'Turn', key: 'turn', type: 'number'},
   {header: 'Phase', key: 'memoryPhase'},

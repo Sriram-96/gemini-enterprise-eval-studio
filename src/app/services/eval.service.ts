@@ -24,6 +24,7 @@ import {ScorerRunResult, ScoringRequest, summarizeScorerResults} from '../scorin
 import {ScorerRegistry} from '../scoring/scorer.registry';
 
 import {EvalBackendService} from './eval-backend.service';
+import {resolveRowConfig} from './row-config.util';
 import {StateService} from './state.service';
 import {TraceCollector} from './trace-collector';
 
@@ -77,6 +78,14 @@ function describeError(error: unknown): {code: string; message: string} {
 }
 
 /**
+ * Slow-query threshold in seconds. A completed row whose TTLT exceeds this is
+ * flagged via `ResultRow.latencyExceededBy`, surfacing a warning on the results
+ * table. Tune this single value to change the budget; it is intentionally not
+ * per-row or user-configurable for now.
+ */
+export const DEFAULT_MAX_TTLT_SECONDS = 30;
+
+/**
  * Service for evaluation operations calling real APIs.
  */
 @Injectable({providedIn: 'root'})
@@ -98,23 +107,26 @@ export class EvalService {
       sessionContext?: SessionContext): Promise<ResultRow> {
     const config = this.stateService.getCurrentConfig();
 
+    // Resolve the per-row `data_stores` override, falling back to the global run
+    // configuration when the cell is absent.
+    const eff = resolveRowConfig(row, config);
 
     const toolsSpec: NonNullable<AssistRequestBody['toolsSpec']> = {};
 
-    if (config.selectedDataStores && config.selectedDataStores.length > 0) {
+    if (eff.dataStores.length > 0) {
       toolsSpec.vertexAiSearchSpec = {
-        dataStoreSpecs: config.selectedDataStores.map(
+        dataStoreSpecs: eff.dataStores.map(
             ds => ({
               dataStore: `projects/${config.projectId}/locations/${
                   config.region}/collections/default_collection/dataStores/${
                   ds}`
             }))
       };
-    } else if (!config.enableWebSearch) {
+    } else if (!eff.enableWebSearch) {
       toolsSpec.vertexAiSearchSpec = {};
     }
 
-    if (config.enableWebSearch) {
+    if (eff.enableWebSearch) {
       toolsSpec.webGroundingSpec = {};
     }
 
@@ -281,6 +293,13 @@ export class EvalService {
       const ttlt = Date.now() - startTime;
       const tpot = await this.computeTpot(fullText, thoughts, ttft, ttlt, config);
 
+      const ttltSeconds = Number((ttlt / 1000).toFixed(2));
+      const over = ttltSeconds - DEFAULT_MAX_TTLT_SECONDS;
+      // Left undefined (not 0) when within budget so fast rows carry no flag and
+      // the results table shows nothing for them.
+      const latencyExceededBy =
+          over > 0 ? Number(over.toFixed(2)) : undefined;
+
       const trace = traceCollector.build();
       const expectedSources = row['expected_sources'] || '';
 
@@ -304,8 +323,9 @@ export class EvalService {
         expectedSources,
         ttft: Number((ttft / 1000).toFixed(2)),
         ttfa: Number((ttfa / 1000).toFixed(2)),
-        ttlt: Number((ttlt / 1000).toFixed(2)),
+        ttlt: ttltSeconds,
         tpot,
+        latencyExceededBy,
         ...summarizeScorerResults(scorerResults),
         errorCode: skippedReason ? 'SKIPPED' : '',
         assistToken,
@@ -313,7 +333,8 @@ export class EvalService {
         region,
         engineId,
         session: sessionInfo?.session,
-        turnId: sessionInfo?.turnId
+        turnId: sessionInfo?.turnId,
+        dataStoresUsed: eff.dataStoresLabel
       };
 
     } catch (error) {
@@ -343,7 +364,8 @@ export class EvalService {
         region,
         engineId,
         session: sessionInfo?.session,
-        turnId: sessionInfo?.turnId
+        turnId: sessionInfo?.turnId,
+        dataStoresUsed: eff.dataStoresLabel
       };
     }
   }

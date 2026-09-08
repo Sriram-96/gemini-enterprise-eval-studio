@@ -49,6 +49,7 @@ export class RunQueriesComponent {
       type: 'markdown',
       truncate: true
     },
+    {header: 'Connectors', key: 'dataStoresUsed', truncate: true},
     {header: 'TTFT (s)', key: 'ttft', type: 'number'},
     {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
     {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
@@ -132,8 +133,7 @@ export class RunQueriesComponent {
     const tasks = this.responseCsvRows.map(row => async () => {
       if (runId !== this.currentRunId || !this.isProcessingResponse) return;
 
-      const csvRow: any = {query: row['query']};
-      const result = await this.evalService.processRow(csvRow);
+      const result = await this.evalService.processRow(row as any);
       if (runId !== this.currentRunId || !this.isProcessingResponse) return;
 
       this.responseResults = [
@@ -141,6 +141,7 @@ export class RunQueriesComponent {
           query: result.query,
           response: result.fetched,
           errorCode: result.errorCode,
+          dataStoresUsed: result.dataStoresUsed,
           ttft: result.ttft,
           ttfa: result.ttfa,
           ttlt: result.ttlt,

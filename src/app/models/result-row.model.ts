@@ -71,6 +71,13 @@ export interface ResultRow {
   /** Time to Last Token in seconds (s). */
   ttlt: number;
   /**
+   * Seconds by which `ttlt` exceeded `DEFAULT_MAX_TTLT_SECONDS`. Set only when a
+   * completed row was over budget; absent otherwise. Its presence is the
+   * "latency exceeded" signal that drives the warning marker on the Query cell.
+   * Left undefined (not 0) so fast rows carry nothing.
+   */
+  latencyExceededBy?: number;
+  /**
    * Time Per Output Token in milliseconds per token (ms/token): the average
    * time to generate each output token after the first, computed as
    * (ttlt - ttft) / (outputTokens - 1). Note the unit differs from the
@@ -133,4 +140,9 @@ export interface ResultRow {
    * was wrong, and the run is not reproducible without knowing which.
    */
   memorySupport?: MemorySupport;
+  /**
+   * Human-readable summary of the grounding connectors used for this row,
+   * including `Web Search` when web grounding was enabled.
+   */
+  dataStoresUsed?: string;
 }

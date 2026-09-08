@@ -27,6 +27,7 @@ one upload.
 | `query`, `golden` | Read by the run. `golden` is the expected answer. |
 | `conversation_id`, `turn` | Group and order the multi-turn rows. Blank on single-turn rows. |
 | `expected_sources` | Read by the **Source Attribution** scorer. Blank rows are recorded as skips, not zeros. |
+| `data_stores` | Optional per-row connector override, read by the run. When present it fully specifies the row's grounding: a JSON array (or `;`/`|`-separated list) of data store ids pins retrieval to those stores, the reserved token `web_search` adds web grounding, `[]` turns everything off, and a blank cell inherits the run's global connector config. Set to `["eval-studio-datastore"]` (masked) on every row here so the set pins to the indexed knowledge base. The resolved value is echoed back in the `dataStoresUsed` output column. |
 | `bug` | Backlog number. Documentation only — not read by the run. |
 | `check` | What actually decides this row: `answer`, `sources`, `thoughts`, `trace`, `latency`, or a combination. Documentation only. |
 
@@ -271,6 +272,13 @@ columns between the off run and the on run — see
 [A note on tool-call traces](#a-note-on-tool-call-traces) for why the answer
 text alone cannot settle this.
 
+The per-row `data_stores` override collapses this into one run if you prefer:
+add the reserved token `web_search` to rows 51–55 (e.g.
+`["eval-studio-datastore","web_search"]`) to pin web grounding *on* for just
+those rows while the rest of the file stays off, rather than running the whole
+set twice. The captured run below predates this and is still a uniform web-off
+pass, so the two-run method it documents remains valid.
+
 ### #36 — Jira connector (rows 58–64)
 
 Covers both halves of the report: the Jira query failures and the "simple what
@@ -358,7 +366,7 @@ replaced, with stable placeholders so rows stay joinable across the two files:
 | `projectId` | `example-project` |
 | Project number in `engineId` and `session` | `000000000000` |
 | Engine id | `eval-studio-agent` |
-| `citedDataStores`, `citedConnectors` | `eval-studio-datastore` |
+| `citedDataStores`, `citedConnectors`, `dataStoresUsed` | `eval-studio-datastore` |
 | GCS document paths | `gs://example-bucket/eval-fixtures/…` |
 | Session ids | `000000000000000001`–`000000000000000075` |
 | `assistToken` | `ASSIST_TOKEN_001`–`ASSIST_TOKEN_096` |
@@ -368,17 +376,16 @@ share one session id and multi-turn threading is still verifiable from the
 export alone. The masking is one-way: the placeholders do not map back to the
 original tenant.
 
-This is a single pass with the **Web Search connector unselected**, and the
-agent confirms it in the answers themselves — "I am currently configured to
-search only across your connected internal databases and do not have access to
-live external web engines in this mode". So it is the *off* half of the #28
-pair; the *on* half still has to be run and diffed against it.
+This is a single pass with the **Web Search connector unselected** — every row's
+`dataStoresUsed` reads `eval-studio-datastore` and no row grounds on the Web
+Search connector. So it is the *off* half of the #28 pair; the *on* half still
+has to be run and diffed against it.
 
-Worth noticing before you read #28 too quickly: several rows still cite public
-`docs.cloud.google.com` URLs with an empty `citedDataStores`. That is Gemini
-Enterprise's built-in product-documentation grounding, not the Web Search
-connector — which is exactly the kind of citation that makes "did web grounding
-run?" a trace question rather than an answer-text question.
+Worth noticing before you read #28 too quickly: a handful of rows still cite
+public `docs.cloud.google.com` URLs while their `citedDataStores` is empty. That
+is Gemini Enterprise's built-in product-documentation grounding, not the Web
+Search connector — which is exactly the kind of citation that makes "did web
+grounding run?" a trace question rather than an answer-text question.
 
 ---
 

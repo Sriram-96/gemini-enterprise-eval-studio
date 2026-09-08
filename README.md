@@ -276,6 +276,54 @@ came from and a `check` column naming what decides it, and the README there is
 explicit about which of these bugs the tool can score automatically and which
 need a column read by hand.
 
+## Input CSV Format
+
+Both the **Run Evaluation** and **Run Queries** tabs accept a CSV upload.
+
+- **Run Evaluation** requires `query` and `golden` columns.
+- **Run Queries** requires a `query` column (`golden` is optional).
+
+### Optional per-row `data_stores` column
+
+By default, the grounding connectors selected in the configuration form (data
+stores and Web Search) apply to every row in the run. To test a connector
+**on vs. off** for the same question within a single run, add an optional
+`data_stores` column.
+
+| Column | Format | Meaning |
+| --- | --- | --- |
+| `data_stores` | JSON array (`["jira","web_search"]`) **or** a `;`/`\|`-separated list. `[]` = no connectors. | The full set of grounding connectors for this row. List the data store IDs to bind, and include the reserved token `web_search` to enable web grounding. |
+
+The `data_stores` cell, **when present, fully specifies the row's grounding**:
+the reserved token `web_search` turns web grounding on, and every other entry is
+a data store. Omitting `web_search` from a non-empty list turns web search off,
+and `[]` turns every connector off. An **empty or missing cell inherits the
+run-level settings** (both data stores and Web Search), so a CSV without the
+column behaves exactly as before. Because inheritance is all-or-nothing at the
+cell level, a present cell must list every connector the row needs — it does not
+merge with the configured selection.
+
+Data store IDs are the connector IDs shown in the configuration form for the
+selected engine (e.g. `WW-GEDEV-DEV1-Google Calendar`). Because a comma would
+clash with the CSV field separator, use `;` or `|` for the list form, or wrap a
+JSON array in quotes.
+
+The results table (and CSV export) include a **Requested Connectors**
+(`dataStoresUsed`) column showing the effective per-row grounding that was
+requested — the data stores plus `Web Search` when web grounding was on — so
+on-vs-off pairs are directly comparable. (This is distinct from the
+**Connectors** column, which reports the connectors actually cited in the
+answer.)
+
+**Example** — the same question with Web Search on and off:
+
+```csv
+query,golden,data_stores
+"Who won the US Open 2026?","(web-grounded answer)","[""web_search""]"
+"Who won the US Open 2026?","(no live web results)",[]
+"Do I have meetings tomorrow?","(calendar retrieval)","[""WW-GEDEV-DEV1-Google Calendar""]"
+```
+
 ## Running with Docker
 
 Gemini Enterprise Eval Studio includes a multi-stage `Dockerfile` that packages both the compiled Angular SPA and the Node.js Express backend server into a single production container image.

@@ -24,7 +24,7 @@ import {DETERMINISTIC_SCORER_ID} from '../scoring/scorers/deterministic.scorer';
 import {MockEvalBackendService} from '../testing/mocks';
 
 import {EvalBackendService} from './eval-backend.service';
-import {EvalService} from './eval.service';
+import {DEFAULT_MAX_TTLT_SECONDS, EvalService} from './eval.service';
 import {StateService} from './state.service';
 
 const CONFIG: AppConfig = {
@@ -440,6 +440,75 @@ describe('EvalService', () => {
     });
   });
 
+  describe('processRow latency flag', () => {
+    /** A streamed assist response carrying a single reply. */
+    function fetched(text: string): Promise<Response> {
+      return Promise.resolve(new Response(JSON.stringify(
+          [{answer: {replies: [{groundedContent: {content: {text}}}]}}])));
+    }
+
+    /**
+     * Pins the wall clock so TTLT is deterministic: the first reading (the run's
+     * start) is 0 and every later reading is `elapsedMs`, making
+     * `ttlt = elapsedMs`.
+     */
+    function pinElapsed(elapsedMs: number) {
+      let first = true;
+      spyOn(Date, 'now').and.callFake(() => {
+        if (first) {
+          first = false;
+          return 0;
+        }
+        return elapsedMs;
+      });
+    }
+
+    it('records the overage when TTLT exceeds the budget', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('answer'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+      pinElapsed((DEFAULT_MAX_TTLT_SECONDS + 5) * 1000);
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.latencyExceededBy).toBe(5);
+    });
+
+    it('leaves the flag unset when TTLT is within the budget', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('answer'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+      pinElapsed((DEFAULT_MAX_TTLT_SECONDS - 5) * 1000);
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.latencyExceededBy).toBeUndefined();
+    });
+
+    it('leaves the flag unset exactly at the budget', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('answer'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+      pinElapsed(DEFAULT_MAX_TTLT_SECONDS * 1000);
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.latencyExceededBy).toBeUndefined();
+    });
+
+    it('leaves the flag unset on a failed row', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(
+          Promise.reject(new Error('network down')));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+
+      const result = await service.processRow({query: 'q', golden: 'g'});
+
+      expect(result.errorCode).toBe('ERROR');
+      expect(result.latencyExceededBy).toBeUndefined();
+    });
+  });
+
   describe('computeTpot', () => {
     /** Invokes the private TPOT helper with explicit latencies. */
     function tpot(
@@ -704,6 +773,75 @@ describe('EvalService', () => {
              {query: 'q', golden: 'g', expected_sources: 'jira-prod'});
 
          expect(result.expectedSources).toBe('jira-prod');
+       });
+  });
+
+  describe('processRow per-row connector overrides', () => {
+    /** A streamed assist response carrying a single reply. */
+    function fetched(text: string): Promise<Response> {
+      return Promise.resolve(new Response(JSON.stringify(
+          [{answer: {replies: [{groundedContent: {content: {text}}}]}}])));
+    }
+
+    const lastBody = () =>
+        mockBackendService.callAssistSpy.calls.mostRecent().args[0].body;
+
+    it('enables web search via the reserved connectors token', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('ok'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+
+      const result = await service.processRow(
+          {query: 'q', golden: '', data_stores: '["web_search"]'});
+
+      expect(lastBody().toolsSpec.webGroundingSpec).toBeDefined();
+      expect(result.dataStoresUsed).toBe('Web Search');
+    });
+
+    it('binds per-row data stores from the connectors list', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(fetched('ok'));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(CONFIG);
+
+      const result = await service.processRow(
+          {query: 'q', golden: '', data_stores: '["jira"]'});
+
+      const specs = lastBody().toolsSpec.vertexAiSearchSpec.dataStoreSpecs;
+      expect(specs.length).toBe(1);
+      expect(specs[0].dataStore).toContain('/dataStores/jira');
+      expect(lastBody().toolsSpec.webGroundingSpec).toBeUndefined();
+      expect(result.dataStoresUsed).toBe('jira');
+    });
+
+    it('binds a data store and web search together from one list',
+       async () => {
+         const service = setUp();
+         mockBackendService.callAssistSpy.and.returnValue(fetched('ok'));
+         spyOn(service['stateService'], 'getCurrentConfig')
+             .and.returnValue(CONFIG);
+
+         const result = await service.processRow(
+             {query: 'q', golden: '', data_stores: 'jira;web_search'});
+
+         const body = lastBody();
+         expect(body.toolsSpec.vertexAiSearchSpec.dataStoreSpecs[0].dataStore)
+             .toContain('/dataStores/jira');
+         expect(body.toolsSpec.webGroundingSpec).toBeDefined();
+         expect(result.dataStoresUsed).toBe('jira, Web Search');
+       });
+
+    it('inherits global config when no data_stores column is present',
+       async () => {
+         const service = setUp();
+         mockBackendService.callAssistSpy.and.returnValue(fetched('ok'));
+         spyOn(service['stateService'], 'getCurrentConfig')
+             .and.returnValue({...CONFIG, selectedDataStores: ['global-ds']});
+
+         const result = await service.processRow({query: 'q', golden: ''});
+
+         const specs = lastBody().toolsSpec.vertexAiSearchSpec.dataStoreSpecs;
+         expect(specs[0].dataStore).toContain('/dataStores/global-ds');
+         expect(result.dataStoresUsed).toBe('global-ds');
        });
   });
 });

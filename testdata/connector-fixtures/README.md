@@ -49,6 +49,16 @@ depend on row position.
 Neither block is a set of variations on one test; each group probes a different
 failure mode.
 
+Every row also carries the optional `data_stores` column, set here to the single
+indexed data store (`["gcs-connector_0000000000000"]`, masked) so the whole set
+runs against the connector regardless of the global connector selection. The
+column is a per-row override that, when present, fully specifies the row's
+grounding: a JSON array (or `;`/`|`-separated list) of data store ids pins
+retrieval to those stores, the reserved token `web_search` adds web grounding,
+`[]` turns everything off, and an empty cell inherits the run's global connector
+configuration. The value chosen for a row is echoed back in the `dataStoresUsed`
+output column so on-vs-off is directly comparable within one run.
+
 ### Single-turn rows (blank `conversation_id`)
 
 **The version trap** — pre-approval and receipt-window rows. This is the
@@ -152,11 +162,10 @@ by default along with every other scorer; leave the others on to compare them,
 or uncheck them to keep the run offline and free.
 
 Expected: **2 skipped** (the two parental-leave rows, which name no source) and
-**27 scored**, of which the low twenties at 1.0 is a healthy result rather than
-the 27 a perfect ceiling would suggest. A handful of follow-up turns answer
-from the previous turn's context and cite nothing, which scores 0 legitimately;
-the reference capture below has four. Investigate a score in the teens or
-lower.
+**27 scored**, of which twenty at 1.0 is a healthy result rather than the 27 a
+perfect ceiling would suggest. A handful of follow-up turns answer from the
+previous turn's context and cite nothing, which scores 0 legitimately; the
+reference capture below has seven. Investigate a score in the teens or lower.
 
 Turns within a conversation share a session and run in order, so stopping a run
 mid-way leaves later turns without the context they assume — which reads as a
@@ -189,45 +198,53 @@ side by side.
 
 All three registered scorers ran, so every row carries a `score_auto-rater`, a
 `score_deterministic` and a `score_source-attribution` column. Web grounding
-was off, so every citation in the capture comes from the indexed corpus.
+was off, so every citation in the capture comes from the indexed corpus, and the
+`dataStoresUsed` column reads `gcs-connector_0000000000000` on every row —
+the effective per-row connector resolved from each row's `data_stores` value.
 
-**Read them for the failures, not the passes.** That run scored 22 rows at 1.0,
-5 at 0.0 and skipped 2, and the four interesting groups are:
+**Read them for the failures, not the passes.** That run scored 20 rows at 1.0,
+7 at 0.0 and skipped 2, and the interesting groups are:
 
-- **Source drift, caught.** `conv-incident` t2, `conv-oncall` t2,
-  `conv-pricing` t2 and `conv-pricing` t3 all cite nothing and score 0. Every
-  one of their answers was already present in an earlier turn's output —
-  `conv-pricing` t3 reaches back two turns, to a floor price t1 volunteered
-  unprompted — and every follow-up that needed genuinely new information
-  re-grounded, bar the one in the next group. The agent re-retrieves only when
-  it must. All four score 0.9 or better on the auto-rater: **answer quality
-  alone reads them as passes**, which is the entire reason attribution exists
-  as a separate metric.
-- **A confabulation, where the two scorers agree instead of diverging.**
-  `conv-incident` t4 (`When is their next security review due?`) also cites
-  nothing, but unlike the drift rows it is *wrong*: it invents a February 2025
-  review date, adds the 12-month cadence and answers February 2026, against a
-  golden of 28 May 2027. Attribution, the auto-rater and the deterministic
-  scorer all score it 0. That agreement is the signature worth learning —
-  attribution at 0 with a high auto-rater means the agent stopped citing, while
-  **both at 0 means it stopped retrieving**, and the second failure is the one
-  that reaches the user as a confident wrong answer.
-- **The version trap, held.** The pre-approval row cites v7 and v6 together and
-  uses v6 only for the "previously $1,800" aside. `conv-perdiem` t4 — the
-  hardest row here, needing the superseded document to answer "has that rate
-  always been the same" — passes.
+- **Source drift, caught.** Seven follow-up turns cite nothing and score 0:
+  `conv-incident` t2, `conv-oncall` t2, `conv-pricing` t2, `conv-pricing` t3,
+  `conv-perdiem` t3, `conv-perdiem` t4 and `conv-coverage` t2. Every one of
+  their answers was already reachable from an earlier turn's output or the
+  conversation's accumulated context — `conv-pricing` t3 reaches back to the
+  floor price t1 volunteered unprompted — and the agent re-retrieves only when
+  a turn forces genuinely new ground. All seven score 0.95 or better on the
+  auto-rater: **answer quality alone reads them as passes**, which is the entire
+  reason attribution exists as a separate metric.
+- **The version trap: held cold, drifted warm.** The two cold single-turn rows
+  hold — `What is the maximum single expense amount` cites v7 alone and scores
+  1.0, and the receipt-window row pulls v7 *and* v6 yet still resolves to the
+  current figure. But the multi-turn payload, `conv-perdiem` t4 — the hardest
+  row here, which needs the *superseded* v6 document to answer "has that rate
+  always been the same" — answers correctly in prose yet cites nothing, scoring
+  0. It is one of the drift rows above: even the sharpest retrieval test in the
+  corpus gets answered from four turns of accumulated context without
+  re-reading, and only attribution catches it.
+- **No confabulation this run — a useful contrast.** The row most prone to it,
+  `conv-incident` t4 (`When is their next security review due?`), re-grounded
+  correctly this time: it cites the Castellan review and returns the golden
+  `28 May 2027`, scoring 1.0 across all three scorers. Learn the signature it
+  would show if it failed, though: attribution at 0 with a high auto-rater means
+  the agent stopped *citing* (the drift rows above), while **both attribution
+  and the auto-rater at 0 means it stopped *retrieving*** and invented the fact,
+  and the second failure is the one that reaches the user as a confident wrong
+  answer. This capture happens to contain only the first kind.
 - **The two unanswerable rows, skipped rather than failed.** Both parental
   leave rows have an empty `expected_sources`, so they are recorded as skips
-  and never drag the average down. Both answers correctly decline, which is
-  what the rows are there to check: the agent says the document is not
-  indexed instead of inventing a policy.
+  and never drag the average down. Both answers correctly decline — naming the
+  documents that *are* indexed and stating that no parental-leave policy is
+  among them — which is what the rows are there to check: the agent says the
+  document is not indexed instead of inventing a policy.
 
 Watch the auto-rater and the deterministic columns diverge across the whole
-file. Setting the confabulated row aside, the auto rater never drops below 0.9
-while the deterministic scorer averages 0.23 and puts only two rows above 0.5,
-because the goldens are one-line facts and the agent answers in several
-formatted paragraphs that happen to contain them. It is a lexical floor here,
-not a verdict — a reminder to read a scorer against what it actually measures.
+file. The auto-rater never drops below 0.95, while the deterministic scorer
+averages 0.12 and puts no row above 0.5 (its high-water mark is 0.32), because
+the goldens are one-line facts and the agent answers in several formatted
+paragraphs that happen to contain them. It is a lexical floor here, not a
+verdict — a reminder to read a scorer against what it actually measures.
 
 Two things the capture shows about the tooling itself:
 
