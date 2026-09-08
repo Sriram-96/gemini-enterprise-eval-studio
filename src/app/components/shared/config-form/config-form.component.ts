@@ -22,6 +22,7 @@ import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig, CollectionComponent, DataStoreComponent, Engine, WidgetConfigResponse} from '../../../models/app-config.model';
+import {MemorySupport, readMemorySupport} from '../../../models/memory.model';
 import {Scorer} from '../../../scoring/scorer';
 import {ScorerRegistry} from '../../../scoring/scorer.registry';
 import {AuthService} from '../../../services/auth.service';
@@ -262,6 +263,7 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
     const engine = this.getSelectedEngine();
     if (!this.config.projectId || !this.config.selectedEngine) {
       this.connectors = this.buildFallbackConnectors(engine);
+      this.setMemorySupport('unknown');
       this.validateAndSyncSelectedDataStores();
       return;
     }
@@ -282,14 +284,31 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
       } else {
         this.connectors = this.buildFallbackConnectors(engine);
       }
+      // The widget config already carries the engine's feature map, so the
+      // saved-memory state comes free with the connector fetch rather than
+      // costing a second call.
+      this.setMemorySupport(readMemorySupport(widgetData));
       this.validateAndSyncSelectedDataStores();
       this.cdr.detectChanges();
     }).catch((error) => {
       console.error('Error fetching widget config:', error);
       this.connectors = this.buildFallbackConnectors(engine);
+      this.setMemorySupport('unknown');
       this.validateAndSyncSelectedDataStores();
       this.cdr.detectChanges();
     });
+  }
+
+  /**
+   * Publishes the detected saved-memory state for the run to consult.
+   *
+   * Deliberately not surfaced in the form: it is a property of the engine
+   * rather than something to configure, and it only matters for query sets
+   * that use the `phase` column. The run reports it at the point of use
+   * instead, by refusing to seed against an engine that reports it off.
+   */
+  private setMemorySupport(memorySupport: MemorySupport) {
+    this.stateService.setMemorySupport(memorySupport);
   }
 
   /**

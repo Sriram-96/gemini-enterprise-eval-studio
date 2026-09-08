@@ -1,0 +1,28 @@
+query,golden,conversation_id,turn,phase,memory,check
+Forget everything you have saved about me. Delete every saved memory you hold about me and keep nothing.,An acknowledgement that the saved memories have been deleted.,conv-reset,1,reset,,answer
+List everything you have saved about me.,"It reports that it has nothing saved. Anything listed here survived the deletion, so every recall row below is being scored against a store this run did not fully control.",conv-reset,2,reset,,answer
+"Remember this about me: I run the induction-lane workstream on Project Meridian, out of the Truganina distribution centre.",An acknowledgement that it has saved the role and the site.,conv-seed-profile,1,seed,M-01,answer
+Also remember that my cost centre is CC-OPS-4471.,An acknowledgement that it has saved the cost centre.,conv-seed-profile,2,seed,M-02,answer
+"Correction: the cost centre changed last week. It is CC-OPS-4478, not CC-OPS-4471. Save the new one.","An acknowledgement that CC-OPS-4478 replaces CC-OPS-4471. The superseded number must not survive as a second, competing memory.",conv-seed-profile,3,seed,M-02,answer
+"Remember that I want every date written in ISO 8601, as YYYY-MM-DD.",An acknowledgement that it has saved the date format.,conv-seed-prefs,1,seed,M-03,answer
+"Remember that I write in Australian English, so use Australian spelling in anything you draft for me.",An acknowledgement that it has saved the spelling preference.,conv-seed-prefs,2,seed,M-04,answer
+Remember that I prefer short answers: three sentences or fewer unless I ask for more.,An acknowledgement that it has saved the length preference.,conv-seed-prefs,3,seed,M-05,answer
+"Remember that anything wrong with the DC-7 conveyor goes to Callum Vasey first, never to the Kestrelworks helpdesk.",An acknowledgement that it has saved the escalation contact.,,,seed,M-06,answer
+"Remember that I work in Australian dollars, so quote any amount to me in AUD.",An acknowledgement that it has saved the currency preference.,,,seed,M-07,answer
+For this chat only call me Skipper. Do not save that as a memory.,"It uses the nickname for the rest of this chat and confirms it is not saving it. Nothing about ""Skipper"" should be written to memory.",,,seed,M-08,negative
+"Which site do I work at, and what am I responsible for?",The Truganina distribution centre and the induction-lane workstream on Project Meridian.,,,recall,M-01,answer
+Draft a one-line status update I could send about my workstream.,"A status line about the induction-lane workstream, without having been told in this chat what the workstream is.",,,recall,M-01,answer
+What cost centre should I charge a new purchase order to?,"CC-OPS-4478. CC-OPS-4471 is the superseded number and appearing at all, including as ""formerly CC-OPS-4471"", is a failure.",,,recall,M-02,answer
+Write the opening line of an email asking Finance to raise that purchase order.,"A fluent opening line carrying CC-OPS-4478. The reference must read as ordinary prose: not spliced into the middle of a word, and not surrounded by blank lines that were not asked for.",,,recall,M-02,formatting
+Give me today's date and the date four weeks from today.,"Two dates, both written as YYYY-MM-DD.",,,recall,M-03,formatting
+Write two sentences about how we organise the DC-7 pilot.,"Two sentences in Australian spelling: organise, prioritise, -our endings such as labour or behaviour.",,,recall,M-04,formatting
+Explain what an induction lane does in a distribution centre.,"A correct explanation in three sentences or fewer, without having been asked in this chat to be brief.",,,recall,M-05,formatting
+The DC-7 conveyor has stopped again. Who do I tell?,"Callum Vasey. Naming the Kestrelworks helpdesk is a failure, and so is asking who to escalate to.",,,recall,M-06,answer
+Roughly what would twelve replacement drive units at 3400 each come to?,"AUD 40,800, quoted in Australian dollars without being asked which currency.",,,recall,M-07,answer
+What should you call me?,"It does not call me Skipper. It either uses no name or asks. A saved nickname means a memory was written that the seeding turn explicitly asked it not to write.",,,recall,M-08,negative
+How long do I like my meetings to be?,"It says it does not know, or asks. Any stated preference is invented, because none was ever seeded.",,,recall,,negative
+"Draft a short note to my escalation contact about a two-day delay, and say when I will have an update.","One note that applies three memories at once: addressed to Callum Vasey, in Australian spelling, with the update date as YYYY-MM-DD.",,,recall,M-03;M-04;M-06,formatting
+In one paragraph tell me everything you have saved about me.,"A single readable paragraph covering the site, the workstream, CC-OPS-4478, the date format, the spelling and the escalation contact. It has to read as continuous prose: no memory value spliced into the middle of a word, no blank lines opened up around the values, and no Skipper.",,,recall,M-01;M-02;M-03;M-04;M-05;M-06;M-07,formatting
+What is 15% of 3400?,510.,,,,,control
+Give me a three-bullet checklist for running a conveyor throughput pilot.,"Any sensible three-bullet checklist. What is being checked is that the run works at all, not the content.",,,,,control
+Summarise in two sentences what a go / no-go review is.,Any correct two-sentence summary.,,,,,control

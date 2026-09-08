@@ -22,6 +22,7 @@ import {takeUntil} from 'rxjs/operators';
 
 import {AppConfig} from '../../models/app-config.model';
 import {CSVRow} from '../../models/csv-row.model';
+import {MEMORY_SETTLE_MS, MemorySupport, isSeedConversation, memoryPhaseOf, orderedPhaseOf, validateMemoryRows} from '../../models/memory.model';
 import {ResultRow} from '../../models/result-row.model';
 import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
 import {ScorerRegistry} from '../../scoring/scorer.registry';
@@ -53,6 +54,7 @@ const BASE_COLUMNS: readonly ColumnDef[] = [
   {header: 'Requested Connectors', key: 'dataStoresUsed', truncate: true},
   {header: 'Conversation', key: 'conversationId', truncate: true},
   {header: 'Turn', key: 'turn', type: 'number'},
+  {header: 'Phase', key: 'memoryPhase'},
   {header: 'TTFT (s)', key: 'ttft', type: 'number'},
   {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
   {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
@@ -103,6 +105,10 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   /** The row whose trace is open in the inspector, if any. */
   inspectedRow: ResultRow|null = null;
   errorMessage: string | null = null;
+  /** The selected engine's saved-memory feature state, as last detected. */
+  memorySupport: MemorySupport = 'unknown';
+  /** Whether the run is paused between the seed phase and the rest. */
+  isSettlingMemories = false;
   private readonly destroy$ = new Subject<void>();
   private currentRunId = 0;
 
@@ -164,6 +170,18 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
       this.results = r;
       this.refreshResultsView();
     });
+
+    this.stateService.memorySupport$.pipe(takeUntil(this.destroy$))
+        .subscribe(memorySupport => {
+          this.memorySupport = memorySupport;
+        });
+  }
+
+  /** Label under the progress bar, which changes during the settle pause. */
+  get progressText(): string {
+    return this.isSettlingMemories ?
+        'Waiting for saved memories to settle...' :
+        `Evaluating... (${this.completedRows} / ${this.totalRows})`;
   }
 
   /**
@@ -287,18 +305,16 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
    */
   async startEvaluation(event: {file: File, rows: CSVRow[]}) {
     if (this.isProcessing) return;
-    const runId = ++this.currentRunId;
-    this.errorMessage = null;
-    this.isProcessing = true;
-    this.progress = 0;
-    this.totalRows = event.rows.length;
-    this.completedRows = 0;
-    this.step = 3;
-    this.stateService.setResults([]);
-    this.cdr.detectChanges();
-    const results: ResultRow[] = [];
 
-    if (this.totalRows === 0) return;
+    // Checked on every file, not just files with seed rows: a misspelt phase
+    // value is precisely the case where the run would otherwise succeed while
+    // silently testing something the author did not write.
+    const memoryError = validateMemoryRows(event.rows);
+    if (memoryError) {
+      this.errorMessage = memoryError;
+      this.cdr.detectChanges();
+      return;
+    }
 
     // Rows sharing a conversation_id are turns of one multi-turn
     // conversation and must run sequentially against the same Assistant
@@ -307,8 +323,34 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     // single-turn queries, each its own one-row "conversation" below, and
     // continue to run freely across the worker pool as before.
     const conversations = this.groupIntoConversations(event.rows);
+    const resetConversations =
+        conversations.filter(turns => orderedPhaseOf(turns) === 'reset');
+    const seedConversations = conversations.filter(isSeedConversation);
+    const mainConversations =
+        conversations.filter(turns => !orderedPhaseOf(turns));
 
-    const tasks = conversations.map(turns => async () => {
+    if ((resetConversations.length > 0 || seedConversations.length > 0) &&
+        !this.canChangeMemories()) {
+      return;
+    }
+
+    const runId = ++this.currentRunId;
+    const memorySupport = this.memorySupport;
+    this.errorMessage = null;
+    this.isProcessing = true;
+    this.progress = 0;
+    this.totalRows = event.rows.length;
+    this.completedRows = 0;
+    // A run stopped mid-pause leaves this set until its timer fires.
+    this.isSettlingMemories = false;
+    this.step = 3;
+    this.stateService.setResults([]);
+    this.cdr.detectChanges();
+    const results: ResultRow[] = [];
+
+    if (this.totalRows === 0) return;
+
+    const runConversation = (turns: CSVRow[]) => async () => {
       const isMultiTurn = turns.length > 1;
       let session: string|undefined;
 
@@ -325,10 +367,13 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
               `Scoring failed for some rows: ${result.scoreError}`;
         }
 
+        const memoryPhase = memoryPhaseOf(row);
         results.push({
           ...result,
           conversationId: isMultiTurn ? row.conversation_id : undefined,
           turn: isMultiTurn ? (Number(row.turn) || i + 1) : undefined,
+          memoryPhase,
+          memorySupport: memoryPhase ? memorySupport : undefined,
         });
         this.stateService.setResults(results);
         this.completedRows++;
@@ -336,8 +381,82 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
             Math.round((this.completedRows / this.totalRows) * 100);
         this.cdr.detectChanges();
       }
-    });
+    };
 
+    // Reset rows run first and seed rows next, one at a time, and each phase
+    // finishes before the next row starts. Saved memories are account-wide
+    // state rather than per-session context, so clearing or seeding
+    // concurrently with the rows that read them would make each run depend on
+    // which request happened to land first.
+    //
+    // An empty phase is skipped rather than awaited on an empty list, so that
+    // an ordinary file still dispatches its first requests synchronously
+    // within this call as it did before phases existed.
+    const orderedPhases = [resetConversations, seedConversations];
+    for (let i = 0; i < orderedPhases.length; i++) {
+      if (orderedPhases[i].length === 0) continue;
+      if (runId !== this.currentRunId || !this.isProcessing) break;
+
+      await this.runPool(orderedPhases[i].map(runConversation), 1);
+
+      // Both a deletion and a save land asynchronously, so whatever runs next
+      // has to wait for this phase's writes rather than race them.
+      const remaining =
+          [...orderedPhases.slice(i + 1), mainConversations].flat();
+      if (remaining.length > 0 && runId === this.currentRunId &&
+          this.isProcessing) {
+        await this.settleMemories(runId);
+      }
+    }
+
+    if (runId === this.currentRunId && this.isProcessing) {
+      await this.runPool(
+          mainConversations.map(runConversation),
+          MAX_CONCURRENT_REQUESTS_FOR_EVALUATION);
+    }
+
+    if (this.isProcessing) {
+      this.progress = 100;
+    }
+    if (runId === this.currentRunId) {
+      this.isProcessing = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  /**
+   * Whether a run that clears or seeds saved memories may start.
+   *
+   * The run neither asks first nor reports afterwards. Reset and seed rows
+   * change state that outlives the run on the authenticated account — a reset
+   * row asks the assistant to delete what is already there, including memories
+   * this tool never created — so a file carrying them is a file to read before
+   * uploading. The `Phase` column of the results is the record of what ran.
+   *
+   * The one refusal left is not a question but a fact about the engine.
+   * @returns True to start now, false when the engine cannot do this at all.
+   */
+  private canChangeMemories(): boolean {
+    if (this.memorySupport === 'off') {
+      this.errorMessage =
+          'This engine reports saved memories (personalization-memory) as ' +
+          'disabled. Seed rows would save nothing and recall rows would be ' +
+          'scored against an empty memory, so the run is refused. Enable the ' +
+          'feature on the engine, or remove the phase column from the file.';
+      this.cdr.detectChanges();
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Runs tasks with a bounded number of them in flight.
+   * @param tasks The work, each item independent of the others.
+   * @param concurrency How many may run at once.
+   */
+  private async runPool(
+      tasks: Array<() => Promise<void>>, concurrency: number): Promise<void> {
     let index = 0;
     const worker = async () => {
       while (index < tasks.length) {
@@ -347,18 +466,37 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     };
 
     const workers = [];
-    for (let i = 0; i < Math.min(MAX_CONCURRENT_REQUESTS_FOR_EVALUATION, tasks.length); i++) {
+    for (let i = 0; i < Math.min(concurrency, tasks.length); i++) {
       workers.push(worker());
     }
     await Promise.all(workers);
+  }
 
-    if (this.isProcessing) {
-      this.progress = 100;
-    }
-    if (runId === this.currentRunId) {
-      this.isProcessing = false;
-      this.cdr.detectChanges();
-    }
+  /**
+   * Pauses between a sequential phase and whatever runs after it.
+   *
+   * A memory is written asynchronously, after the turn that produced it has
+   * finished streaming, and a deletion lands the same way. A query sent the
+   * instant the phase returns can therefore miss a memory that was in fact
+   * saved, or read one that was in fact deleted, which would show up as a
+   * product failure rather than as a race in the harness.
+   * @param runId The run being paused, so a stopped run's timer can tell that
+   *     it no longer owns the progress label by the time it fires.
+   */
+  private settleMemories(runId: number): Promise<void> {
+    this.isSettlingMemories = true;
+    this.cdr.detectChanges();
+    return new Promise<void>(resolve => {
+      setTimeout(() => {
+        // The timer of a stopped run outlives it, so it must not clear the
+        // label of whichever run is settling by then.
+        if (runId === this.currentRunId) {
+          this.isSettlingMemories = false;
+          this.cdr.detectChanges();
+        }
+        resolve();
+      }, MEMORY_SETTLE_MS);
+    });
   }
 
   /** Gets the scoring strategies selected in the configuration, in run order. */

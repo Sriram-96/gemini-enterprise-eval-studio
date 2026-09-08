@@ -60,7 +60,26 @@ export interface CollectionComponent {
   dataStoreComponents?: DataStoreComponent[];
 }
 
+/**
+ * Whether an engine feature is turned on, as reported by the API. An absent
+ * key and `FEATURE_STATE_UNSPECIFIED` both mean "not stated", which is not the
+ * same as off.
+ */
+export type FeatureState =
+    'FEATURE_STATE_UNSPECIFIED'|'FEATURE_STATE_ON'|'FEATURE_STATE_OFF';
+
+/**
+ * The read-only view of the engine's settings that the widget config exposes.
+ * Its `features` map mirrors `Engine.features`, which is how the studio learns
+ * whether an engine has features like saved memories enabled without needing
+ * permission to read the engine resource itself.
+ */
+export interface WidgetConfigUiSettings {
+  features?: {[key: string]: FeatureState};
+}
+
 export interface WidgetConfigResponse {
   collectionComponents?: CollectionComponent[];
+  uiSettings?: WidgetConfigUiSettings;
 }
 

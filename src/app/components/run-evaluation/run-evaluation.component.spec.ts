@@ -19,6 +19,7 @@ import {TestBed, fakeAsync, tick} from '@angular/core/testing';
 import {BehaviorSubject, of} from 'rxjs';
 
 import {AppConfig} from '../../models/app-config.model';
+import {MEMORY_SETTLE_MS, MemorySupport} from '../../models/memory.model';
 import {ResultRow} from '../../models/result-row.model';
 import {ScorerRunResult} from '../../scoring/scorer';
 import {AuthService} from '../../services/auth.service';
@@ -36,6 +37,7 @@ describe('RunEvaluationComponent', () => {
   let mockEvalBackendService: MockEvalBackendService;
   let resultsSubject: BehaviorSubject<ResultRow[]>;
   let configSubject: BehaviorSubject<AppConfig>;
+  let memorySupportSubject: BehaviorSubject<MemorySupport>;
 
   beforeEach(async () => {
     resultsSubject = new BehaviorSubject<ResultRow[]>([]);
@@ -51,6 +53,8 @@ describe('RunEvaluationComponent', () => {
       enableWebSearch: false
     });
 
+    memorySupportSubject = new BehaviorSubject<MemorySupport>('unknown');
+
     mockStateService = jasmine.createSpyObj(
         'StateService',
         [
@@ -60,13 +64,18 @@ describe('RunEvaluationComponent', () => {
           'setConfig',
           'setEngines',
           'setErrorMessage',
+          'setMemorySupport',
+          'getMemorySupport',
         ],
         {
           results$: resultsSubject.asObservable(),
           config$: configSubject.asObservable(),
           engines$: of([]),
           errorMessage$: of(''),
+          memorySupport$: memorySupportSubject.asObservable(),
         });
+    mockStateService.getMemorySupport.and.callFake(
+        () => memorySupportSubject.value);
     mockStateService.getCurrentConfig.and.callFake(() => configSubject.value);
     mockStateService.getEngines.and.returnValue([{name: 'engine', displayName: 'Engine', modelConfigs: {}}]);
     mockStateService.setResults.and.callFake((rows: ResultRow[]) => {
@@ -371,6 +380,387 @@ describe('RunEvaluationComponent', () => {
        expect(startedBeforeFinished['a2']).toContain('a1');
        expect(startedBeforeFinished['b2']).toContain('b1');
      }));
+
+  describe('memory phases', () => {
+    /** Builds the component with the given saved-memory feature state. */
+    function setUp(memorySupport: MemorySupport = 'on') {
+      memorySupportSubject.next(memorySupport);
+      const fixture = TestBed.createComponent(RunEvaluationComponent);
+      const component = fixture.componentInstance;
+      fixture.detectChanges();
+      return component;
+    }
+
+    /** Records the order rows are dispatched in and which had finished. */
+    function recordOrder() {
+      const started: string[] = [];
+      const finishedWhenStarted: Record<string, string[]> = {};
+      const finished: string[] = [];
+
+      mockEvalService.processRow.and.callFake(
+          async (row, _progressCb, sessionContext) => {
+            started.push(row.query);
+            finishedWhenStarted[row.query] = [...finished];
+            await Promise.resolve();
+            finished.push(row.query);
+            return {
+              query: row.query,
+              golden: row.golden,
+              fetched: `fetched-${row.query}`,
+              ttft: 10,
+              ttfa: 20,
+              ttlt: 30,
+              score: 0.9,
+              session: `session-after-${row.query}`,
+              sessionContext,
+            } as any;
+          });
+
+      return {started, finishedWhenStarted};
+    }
+
+    it('should start a seeding run without asking the tester first', fakeAsync(() => {
+         const component = setUp();
+         recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'remember X', golden: 'ok', phase: 'seed'}]
+         });
+         tick();
+
+         // Seeding writes state that outlives the run, but the file is what
+         // states the intent: uploading one that seeds is the decision.
+         expect(mockEvalService.processRow).toHaveBeenCalledTimes(1);
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should run every seed row, one at a time, before any other row and only after the settle delay',
+       fakeAsync(() => {
+         const component = setUp();
+         const {started, finishedWhenStarted} = recordOrder();
+
+         // The recall row is deliberately first in the file: the barrier has
+         // to reorder it behind the seed rows, not merely preserve the order
+         // the author happened to write.
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'recall', golden: 'metric', phase: 'recall'},
+             {query: 'seed1', golden: 'ok', phase: 'seed'},
+             {query: 'seed2', golden: 'ok', phase: 'seed'},
+           ]
+         });
+         tick();
+         tick();
+
+         // Both seed rows have run, sequentially, and the recall row is still
+         // waiting behind the settle pause.
+         expect(started).toEqual(['seed1', 'seed2']);
+         expect(finishedWhenStarted['seed2']).toContain('seed1');
+         expect(component.isSettlingMemories).toBeTrue();
+         expect(component.progressText)
+             .toBe('Waiting for saved memories to settle...');
+
+         tick(MEMORY_SETTLE_MS);
+
+         expect(started).toEqual(['seed1', 'seed2', 'recall']);
+         expect(component.isSettlingMemories).toBeFalse();
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should clear memories before seeding them, with a settle pause after each phase',
+       fakeAsync(() => {
+         const component = setUp();
+         const {started} = recordOrder();
+
+         // Written in the order an author would read the file back in, which
+         // is the reverse of the order the phases have to run in.
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'recall', golden: 'm', phase: 'recall'},
+             {query: 'seed1', golden: 'ok', phase: 'seed'},
+             {query: 'forget everything', golden: 'ok', phase: 'reset'},
+           ]
+         });
+         tick();
+         tick();
+
+         // A seed row that overlapped the deletion could be deleted by it, so
+         // the reset phase gets its own barrier rather than sharing the seed's.
+         expect(started).toEqual(['forget everything']);
+         expect(component.isSettlingMemories).toBeTrue();
+
+         tick(MEMORY_SETTLE_MS);
+
+         expect(started).toEqual(['forget everything', 'seed1']);
+         expect(component.isSettlingMemories).toBeTrue();
+
+         tick(MEMORY_SETTLE_MS);
+
+         expect(started).toEqual(['forget everything', 'seed1', 'recall']);
+         expect(component.isSettlingMemories).toBeFalse();
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should run reset rows one at a time and record the phase on their results',
+       fakeAsync(() => {
+         const component = setUp('on');
+         const {started, finishedWhenStarted} = recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'forget everything', golden: 'ok', phase: 'reset'},
+             {query: 'list what you saved', golden: 'nothing', phase: 'reset'},
+             {query: 'plain', golden: 'g'},
+           ]
+         });
+         tick();
+         tick();
+
+         // The verification row only means anything after the deletion it
+         // checks has actually been sent.
+         expect(started).toEqual(['forget everything', 'list what you saved']);
+         expect(finishedWhenStarted['list what you saved'])
+             .toContain('forget everything');
+
+         tick(MEMORY_SETTLE_MS);
+
+         const byQuery = new Map(resultsSubject.value.map(r => [r.query, r]));
+         expect(byQuery.get('forget everything')!.memoryPhase).toBe('reset');
+         expect(byQuery.get('forget everything')!.memorySupport).toBe('on');
+       }));
+
+    it('should send a reset row without asking the tester first', fakeAsync(() => {
+         const component = setUp();
+         const {started} = recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'forget everything', golden: 'ok', phase: 'reset'},
+             {query: 'seed1', golden: 'ok', phase: 'seed'},
+           ]
+         });
+         tick();
+
+         expect(started).toEqual(['forget everything']);
+       }));
+
+    it('should settle after a reset-only file before its ordinary rows run',
+       fakeAsync(() => {
+         const component = setUp();
+         const {started} = recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'forget everything', golden: 'ok', phase: 'reset'},
+             {query: 'plain', golden: 'g'},
+           ]
+         });
+         tick();
+         tick();
+
+         // With no seed phase in between, the ordinary rows are what has to
+         // wait for the deletion to land.
+         expect(started).toEqual(['forget everything']);
+         expect(component.isSettlingMemories).toBeTrue();
+
+         tick(MEMORY_SETTLE_MS);
+
+         expect(started).toEqual(['forget everything', 'plain']);
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should not pause after the last phase when nothing follows it',
+       fakeAsync(() => {
+         const component = setUp();
+         recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'forget everything', golden: 'ok', phase: 'reset'}]
+         });
+         tick();
+         tick();
+
+         // Nothing is waiting on the write, so the run has no reason to hold
+         // the tester for five seconds before reporting.
+         expect(component.isSettlingMemories).toBeFalse();
+         expect(component.isProcessing).toBeFalse();
+         expect(component.completedRows).toBe(1);
+       }));
+
+    it('should start the recall row in a fresh session rather than the seed row\'s',
+       fakeAsync(() => {
+         const component = setUp();
+         const contexts: Array<{query: string, sessionContext: unknown}> = [];
+         mockEvalService.processRow.and.callFake(
+             async (row, _progressCb, sessionContext) => {
+               contexts.push({query: row.query, sessionContext});
+               return {
+                 query: row.query,
+                 golden: row.golden,
+                 fetched: `fetched-${row.query}`,
+                 ttft: 10,
+                 ttfa: 20,
+                 ttlt: 30,
+                 tpot: 0,
+                 score: 0.9,
+                 session: `session-after-${row.query}`,
+               };
+             });
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'seed1', golden: 'ok', phase: 'seed'},
+             {query: 'recall', golden: 'metric', phase: 'recall'},
+           ]
+         });
+         tick();
+         tick();
+         tick(MEMORY_SETTLE_MS);
+
+         // A recall row answered from the seed row's own session would prove
+         // nothing about saved memories, only about within-session context.
+         const recall = contexts.find(c => c.query === 'recall');
+         expect(recall!.sessionContext).toEqual({session: undefined});
+       }));
+
+    it('should record the phase and the feature state on the results', fakeAsync(() => {
+         const component = setUp('on');
+         recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'seed1', golden: 'ok', phase: 'seed'},
+             {query: 'recall', golden: 'metric', phase: 'recall'},
+             {query: 'plain', golden: 'g'},
+           ]
+         });
+         tick();
+         tick();
+         tick(MEMORY_SETTLE_MS);
+
+         const byQuery = new Map(resultsSubject.value.map(r => [r.query, r]));
+         expect(byQuery.get('seed1')!.memoryPhase).toBe('seed');
+         expect(byQuery.get('seed1')!.memorySupport).toBe('on');
+         expect(byQuery.get('recall')!.memoryPhase).toBe('recall');
+         expect(byQuery.get('recall')!.memorySupport).toBe('on');
+         // An ordinary row is not part of a memory evaluation, so it carries
+         // neither field and the columns stay meaningful.
+         expect(byQuery.get('plain')!.memoryPhase).toBeUndefined();
+         expect(byQuery.get('plain')!.memorySupport).toBeUndefined();
+       }));
+
+    it('should refuse to seed against an engine that reports memories as off',
+       fakeAsync(() => {
+         const component = setUp('off');
+         recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'remember X', golden: 'ok', phase: 'seed'}]
+         });
+         tick();
+
+         expect(component.errorMessage).toContain('personalization-memory');
+         expect(mockEvalService.processRow).not.toHaveBeenCalled();
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should still seed when the engine does not report the feature', fakeAsync(() => {
+         const component = setUp('unknown');
+         recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'remember X', golden: 'ok', phase: 'seed'}]
+         });
+         tick();
+         tick();
+
+         expect(component.errorMessage).toBeNull();
+         expect(mockEvalService.processRow).toHaveBeenCalledTimes(1);
+       }));
+
+    it('should reject an invalid query set without sending anything', fakeAsync(() => {
+         const component = setUp();
+         recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [
+             {query: 'seed1', golden: 'ok', phase: 'seed', conversation_id: 'c', turn: '1'},
+             {query: 'recall', golden: 'm', phase: 'recall', conversation_id: 'c', turn: '2'},
+           ]
+         });
+         tick();
+
+         expect(component.errorMessage).toContain('new chat');
+         expect(mockEvalService.processRow).not.toHaveBeenCalled();
+         expect(component.step).not.toBe(3);
+       }));
+
+    it('should not let a stopped run\'s settle timer clear the label of the run that replaced it',
+       fakeAsync(() => {
+         const component = setUp();
+         recordOrder();
+         const seedThenRecall = [
+           {query: 'seed1', golden: 'ok', phase: 'seed'},
+           {query: 'recall', golden: 'm', phase: 'recall'},
+         ];
+
+         // Run A reaches its settle pause and is then stopped. Its timer is
+         // still pending and will fire long after the run is gone.
+         component.startEvaluation(
+             {file: new File([], 'a.csv'), rows: seedThenRecall});
+         tick();
+         tick();
+         expect(component.isSettlingMemories).toBeTrue();
+         component.stopEvaluation();
+
+         // The tester takes a moment before restarting, so run B's pause is
+         // the same length but ends later than run A's pending timer.
+         const restartGap = 1000;
+         tick(restartGap);
+         component.startEvaluation(
+             {file: new File([], 'b.csv'), rows: seedThenRecall});
+         tick();
+         expect(component.isSettlingMemories).toBeTrue();
+
+         // Run A's timer fires here. It no longer owns the label, so run B
+         // must still read as settling.
+         tick(MEMORY_SETTLE_MS - restartGap);
+         expect(component.isSettlingMemories).toBeTrue();
+         expect(component.progressText)
+             .toBe('Waiting for saved memories to settle...');
+
+         // Run B's own timer then clears it and the run finishes normally.
+         tick(restartGap);
+         expect(component.isSettlingMemories).toBeFalse();
+         expect(component.isProcessing).toBeFalse();
+       }));
+
+    it('should leave a file without a phase column entirely unaffected', fakeAsync(() => {
+         const component = setUp();
+         const {started} = recordOrder();
+
+         component.startEvaluation({
+           file: new File([], 'test.csv'),
+           rows: [{query: 'q1', golden: 'g1'}, {query: 'q2', golden: 'g2'}]
+         });
+         tick();
+
+         expect(started).toEqual(['q1', 'q2']);
+         expect(component.completedRows).toBe(2);
+       }));
+  });
 
   describe('score columns', () => {
     /** Builds a scored row carrying the given per-scorer outcomes. */
