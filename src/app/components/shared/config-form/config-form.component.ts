@@ -21,6 +21,7 @@ import {FormsModule} from '@angular/forms';
 import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
+import {Agent, agentDisplayName, isRunnableAgent} from '../../../models/agent.model';
 import {AppConfig, CollectionComponent, DataStoreComponent, Engine, WidgetConfigResponse} from '../../../models/app-config.model';
 import {MemorySupport, readMemorySupport} from '../../../models/memory.model';
 import {Scorer} from '../../../scoring/scorer';
@@ -66,6 +67,7 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
     region: 'global',
     selectedEngine: '',
     selectedModel: '',
+    selectedAgent: '',
     autoRaterModel: '',
     autoRaterInstruction: '',
     selectedDataStores: [],
@@ -82,6 +84,20 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   models: string[] = [];
   loading = false;
   errorMessage = '';
+
+  /**
+   * Agents published under the selected engine that can serve a query,
+   * refreshed whenever the engine changes.
+   */
+  agents: Agent[] = [];
+  agentsLoading = false;
+  /**
+   * Why the agent list is empty, when the reason is a failed lookup rather than
+   * an engine without agents. Shown beside the picker instead of in
+   * `errorMessage`, which belongs to the engine fetch: an engine whose agents
+   * cannot be listed is still perfectly usable with its default assistant.
+   */
+  agentsErrorMessage = '';
 
   isDropdownOpen = false;
   connectorSearchQuery = '';
@@ -119,6 +135,7 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
             this.updateModelsForSelectedEngine();
             if (engineChanged) {
               this.fetchConnectorsForSelectedEngine();
+              this.fetchAgentsForSelectedEngine();
             }
           }
           if (this.autoRaterModels.length > 0 && (!this.config.autoRaterModel || !this.autoRaterModels.includes(this.config.autoRaterModel))) {
@@ -133,6 +150,7 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
           if (this.config.selectedEngine && this.engines.length > 0) {
             this.updateModelsForSelectedEngine();
             this.fetchConnectorsForSelectedEngine();
+            this.fetchAgentsForSelectedEngine();
           }
         });
 
@@ -198,15 +216,8 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
           this.stateService.setEngines([]);
           
           console.error('Error fetching engines:', error);
-          let details = 'See console for details.';
-          if (error instanceof HttpErrorResponse) {
-            details = error.error?.error?.message || error.message || details;
-          } else if (error instanceof Error) {
-            details = error.message;
-          } else if (typeof error === 'string') {
-            details = error;
-          }
-          this.errorMessage = `Error fetching engines: ${details}`;
+          this.errorMessage =
+              `Error fetching engines: ${this.describeError(error)}`;
           this.cdr.detectChanges();
         });
   }
@@ -254,9 +265,103 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
 
   onEngineChange() {
     this.config.selectedDataStores = [];
+    // Agents belong to one engine, so a selection cannot survive the switch.
+    this.config.selectedAgent = '';
+    this.agents = [];
     this.updateModelsForSelectedEngine();
     this.fetchConnectorsForSelectedEngine();
+    this.fetchAgentsForSelectedEngine();
     this.onConfigChange();
+  }
+
+  /**
+   * Loads the agents published under the selected engine into the picker.
+   *
+   * A failure is reported beside the picker and leaves the run on the default
+   * assistant rather than blocking it: listing agents needs a permission that
+   * running queries does not, so an engine whose agents cannot be read is still
+   * evaluable.
+   */
+  fetchAgentsForSelectedEngine() {
+    this.agentsErrorMessage = '';
+    if (!this.config.projectId || !this.config.selectedEngine) {
+      this.agents = [];
+      // Clears the flag an in-flight lookup for the previous engine set; that
+      // lookup will be discarded on arrival and so will never clear it itself.
+      this.agentsLoading = false;
+      return;
+    }
+
+    // Pinned so a slow response for a previously selected engine cannot land
+    // on top of the current one and offer agents that engine does not have.
+    const requestedEngine = this.config.selectedEngine;
+    this.agentsLoading = true;
+
+    this.evalBackendService
+        .fetchAgents(
+            this.config.projectId, this.config.region, requestedEngine,
+            this.config)
+        .then((agents) => {
+          if (requestedEngine !== this.config.selectedEngine) {
+            return;
+          }
+          this.agentsLoading = false;
+          this.agents = (agents || []).filter(isRunnableAgent);
+          this.validateAndSyncSelectedAgent();
+          this.cdr.detectChanges();
+        })
+        .catch((error: unknown) => {
+          if (requestedEngine !== this.config.selectedEngine) {
+            return;
+          }
+          this.agentsLoading = false;
+          this.agents = [];
+          console.error('Error fetching agents:', error);
+          this.agentsErrorMessage =
+              `Could not list agents: ${this.describeError(error)}`;
+          this.validateAndSyncSelectedAgent();
+          this.cdr.detectChanges();
+        });
+  }
+
+  /** Reduces a caught error to the message worth showing the user. */
+  private describeError(error: unknown): string {
+    if (error instanceof HttpErrorResponse) {
+      return error.error?.error?.message || error.message ||
+          'See console for details.';
+    }
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+    return 'See console for details.';
+  }
+
+  /**
+   * Drops a selected agent that the freshly loaded list no longer offers, so
+   * the run falls back to the default assistant instead of failing every row
+   * against an agent that is gone.
+   */
+  private validateAndSyncSelectedAgent() {
+    if (!this.config.selectedAgent) {
+      return;
+    }
+    if (!this.agents.some(a => a.name === this.config.selectedAgent)) {
+      this.config.selectedAgent = '';
+      this.onConfigChange();
+    }
+  }
+
+  /** The label shown for an agent in the picker. */
+  agentLabel(agent: Agent): string {
+    return agentDisplayName(agent);
+  }
+
+  /** The agent the run is pointed at, or undefined for the default assistant. */
+  getSelectedAgent(): Agent|undefined {
+    return this.agents.find(a => a.name === this.config.selectedAgent);
   }
 
   fetchConnectorsForSelectedEngine() {
@@ -484,11 +589,14 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
   changeConfigAndResetEngines() {
     this.config.selectedEngine = '';
     this.config.selectedModel = '';
+    this.config.selectedAgent = '';
     this.config.selectedDataStores = [];
     this.config.enableWebSearch = false;
     this.stateService.setConfig(this.config);
 
     this.engines = [];
+    this.agents = [];
+    this.agentsErrorMessage = '';
     this.stateService.setEngines([]);
     this.cdr.detectChanges();
   }

@@ -107,6 +107,13 @@ export interface ResultRow {
   projectId?: string;
   region?: string;
   engineId?: string;
+  /**
+   * Id of the agent that answered, or empty when the row ran against the
+   * engine's default assistant. Recorded alongside `engineId` because the same
+   * query against the same engine scores differently per agent, and the run is
+   * not reproducible without knowing which one served it.
+   */
+  agentId?: string;
   /** Error message of the first scorer that failed, if any. */
   scoreError?: string;
   /**

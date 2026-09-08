@@ -149,7 +149,8 @@ export class RunQueriesComponent {
           assistToken: result.assistToken,
           projectId: result.projectId,
           region: result.region,
-          engineId: result.engineId
+          engineId: result.engineId,
+          agentId: result.agentId
         }
       ];
 

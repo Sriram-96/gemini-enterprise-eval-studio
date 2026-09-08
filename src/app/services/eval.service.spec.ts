@@ -625,6 +625,73 @@ describe('EvalService', () => {
     });
   });
 
+  describe('processRow agent selection', () => {
+    const AGENT_PATH =
+        'projects/p/locations/global/collections/default_collection/engines/e/assistants/default_assistant/agents/support-bot';
+
+    /** Runs one row under the given config and returns the assist request. */
+    async function requestFor(config: AppConfig) {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(
+          Promise.resolve(new Response(JSON.stringify(
+              [{answer: {replies: [{groundedContent: {content: {text: 'hi'}}}]}}]))));
+      spyOn(service['stateService'], 'getCurrentConfig').and.returnValue(config);
+
+      const result = await service.processRow({query: 'q', golden: ''});
+
+      return {
+        body: mockBackendService.callAssistSpy.calls.mostRecent().args[0].body,
+        result
+      };
+    }
+
+    it('should omit agentsSpec entirely when no agent is selected', async () => {
+      const {body} = await requestFor({...CONFIG, selectedAgent: ''});
+
+      expect(body.agentsSpec).toBeUndefined();
+    });
+
+    it('should omit agentsSpec for a config that predates the field', async () => {
+      const {body} = await requestFor(CONFIG);
+
+      expect(body.agentsSpec).toBeUndefined();
+    });
+
+    it('should send the bare agent id, not the resource name', async () => {
+      const {body} = await requestFor({...CONFIG, selectedAgent: AGENT_PATH});
+
+      expect(body.agentsSpec).toEqual({agentSpecs: [{agentId: 'support-bot'}]});
+    });
+
+    it('should record the agent on the result row so the run is reproducible',
+       async () => {
+         const {result} =
+             await requestFor({...CONFIG, selectedAgent: AGENT_PATH});
+
+         expect(result.agentId).toBe('support-bot');
+         expect(result.engineId).toBe('engine');
+       });
+
+    it('should record an empty agent for a default-assistant run', async () => {
+      const {result} = await requestFor({...CONFIG, selectedAgent: ''});
+
+      expect(result.agentId).toBe('');
+    });
+
+    it('should record the agent on a failed row too', async () => {
+      const service = setUp();
+      mockBackendService.callAssistSpy.and.returnValue(
+          Promise.resolve(new Response('nope', {status: 500})));
+      spyOn(service['stateService'], 'getCurrentConfig')
+          .and.returnValue({...CONFIG, selectedAgent: AGENT_PATH});
+
+      const result = await service.processRow({query: 'q', golden: ''});
+
+      expect(result.errorCode).toBe('HTTP 500');
+      expect(result.agentId).toBe('support-bot');
+    });
+  });
+
   describe('processRow trace capture', () => {
     let service: EvalService;
 
