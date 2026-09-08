@@ -531,8 +531,6 @@ describe('RunEvaluationComponent', () => {
          const byQuery = new Map(resultsSubject.value.map(r => [r.query, r]));
          expect(byQuery.get('forget everything')!.memoryPhase).toBe('reset');
          expect(byQuery.get('forget everything')!.memorySupport).toBe('on');
-         // Reset rows delete rather than save, so they are not teardown debt.
-         expect(component.seededQueries).toEqual([]);
        }));
 
     it('should send a reset row without asking the tester first', fakeAsync(() => {
@@ -709,31 +707,6 @@ describe('RunEvaluationComponent', () => {
          expect(component.step).not.toBe(3);
        }));
 
-    it('should list the seeded queries for teardown once the run finishes',
-       fakeAsync(() => {
-         const component = setUp();
-         recordOrder();
-
-         component.startEvaluation({
-           file: new File([], 'test.csv'),
-           rows: [
-             {query: 'remember X', golden: 'ok', phase: 'seed'},
-             {query: 'remember Y', golden: 'ok', phase: 'seed'},
-             {query: 'recall', golden: 'm', phase: 'recall'},
-           ]
-         });
-         tick();
-         tick();
-         tick(MEMORY_SETTLE_MS);
-
-         // Nothing can delete these through the API, so the run has to say
-         // exactly what it left on the account.
-         expect(component.seededQueries).toEqual(['remember X', 'remember Y']);
-
-         component.dismissTeardownNotice();
-         expect(component.seededQueries).toEqual([]);
-       }));
-
     it('should not let a stopped run\'s settle timer clear the label of the run that replaced it',
        fakeAsync(() => {
          const component = setUp();
@@ -784,7 +757,6 @@ describe('RunEvaluationComponent', () => {
          });
          tick();
 
-         expect(component.seededQueries).toEqual([]);
          expect(started).toEqual(['q1', 'q2']);
          expect(component.completedRows).toBe(2);
        }));

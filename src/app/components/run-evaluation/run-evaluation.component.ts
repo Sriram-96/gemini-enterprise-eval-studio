@@ -101,13 +101,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   memorySupport: MemorySupport = 'unknown';
   /** Whether the run is paused between the seed phase and the rest. */
   isSettlingMemories = false;
-  /**
-   * The seed queries of the finished run, listed in the teardown notice.
-   *
-   * There is no API to delete a memory the assistant saved, so the only honest
-   * thing the studio can do is tell the tester exactly what it left behind.
-   */
-  seededQueries: string[] = [];
   private readonly destroy$ = new Subject<void>();
   private currentRunId = 0;
 
@@ -340,7 +333,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     this.progress = 0;
     this.totalRows = event.rows.length;
     this.completedRows = 0;
-    this.seededQueries = [];
     // A run stopped mid-pause leaves this set until its timer fires.
     this.isSettlingMemories = false;
     this.step = 3;
@@ -419,9 +411,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
       this.progress = 100;
     }
     if (runId === this.currentRunId) {
-      this.seededQueries =
-          results.filter(row => row.memoryPhase === 'seed')
-              .map(row => row.query);
       this.isProcessing = false;
       this.cdr.detectChanges();
     }
@@ -430,12 +419,11 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   /**
    * Whether a run that clears or seeds saved memories may start.
    *
-   * The run is not confirmed with the tester. Reset and seed rows change state
-   * that outlives the run on the authenticated account — a reset row asks the
-   * assistant to delete what is already there, including memories this tool
-   * never created — so a file carrying them is a file to look at before
-   * uploading, not after. What the run does say is what it left behind: the
-   * teardown notice lists the seed queries once the run finishes.
+   * The run neither asks first nor reports afterwards. Reset and seed rows
+   * change state that outlives the run on the authenticated account — a reset
+   * row asks the assistant to delete what is already there, including memories
+   * this tool never created — so a file carrying them is a file to read before
+   * uploading. The `Phase` column of the results is the record of what ran.
    *
    * The one refusal left is not a question but a fact about the engine.
    * @returns True to start now, false when the engine cannot do this at all.
@@ -452,12 +440,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     }
 
     return true;
-  }
-
-  /** Dismisses the post-run teardown notice. */
-  dismissTeardownNotice() {
-    this.seededQueries = [];
-    this.cdr.detectChanges();
   }
 
   /**

@@ -75,42 +75,6 @@
     ></app-file-upload>
   </div>
 
-  <!-- Teardown notice for a run that seeded memories -->
-  <div
-    *ngIf="step === 3 && !isProcessing && seededQueries.length > 0"
-    class="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-md"
-  >
-    <div class="flex">
-      <div class="flex-shrink-0">
-        <svg class="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-        </svg>
-      </div>
-      <div class="ml-3 space-y-2">
-        <p class="text-sm font-medium text-amber-800">
-          This run may have saved memories to your account.
-        </p>
-        <p class="text-sm text-amber-700">
-          They persist on the signed-in account until something clears them. A
-          run whose file starts with reset rows clears them itself; otherwise
-          ask the assistant to forget them, or remove them by hand in Gemini
-          Enterprise (Settings &rsaquo; Personalization &rsaquo; Memories).
-          Re-running this file without clearing first will save near-duplicate
-          memories and can change what later runs recall.
-        </p>
-        <ul class="text-sm text-amber-700 list-disc list-inside space-y-0.5">
-          <li *ngFor="let query of seededQueries">{{ query }}</li>
-        </ul>
-        <button
-          (click)="dismissTeardownNotice()"
-          class="text-sm font-medium text-amber-800 underline hover:text-amber-900"
-        >
-          Dismiss
-        </button>
-      </div>
-    </div>
-  </div>
-
   <!-- Results Table -->
   <div [hidden]="step !== 3">
     <app-csv-table

@@ -65,8 +65,8 @@ architecture:
     after the run ends, inside your tenant. A `reset` row asks it to delete
     saved memories, which is likewise not limited to this run and cannot be
     undone, and neither is gated behind a confirmation prompt — the query set
-    is the instruction. A run reports what it left behind. See
-    [Evaluating Saved Memories](#evaluating-saved-memories).
+    is the instruction, and the `Phase` column of the results is the record of
+    what ran. See [Evaluating Saved Memories](#evaluating-saved-memories).
 
 ## Prerequisites & Setup
 
@@ -243,15 +243,18 @@ crashes never reaches a teardown step, but it does reach the next run's reset.
 
 Because both phases change state that outlives the run:
 
--   **A run starts as soon as you press Run — there is no confirmation step.**
-    The file states the intent, so read a file's `reset` and `seed` rows before
-    uploading it rather than expecting the tool to ask.
+-   **A run starts as soon as you press Run, and says nothing afterwards.**
+    There is no confirmation step and no post-run notice: the file states the
+    intent and the `Phase` column of the results is the record. Read a file's
+    `reset` and `seed` rows before uploading it rather than expecting the tool
+    to walk you through them.
 -   **A reset row is not limited to memories this tool created.** It asks the
     assistant to delete what it holds for the signed-in user, it cannot be
     undone, and nothing will stop you. Prefer a dedicated test identity over a
     real user account.
--   After the run, a notice lists the seed queries. Re-running the same file
-    clears them; otherwise remove them by hand in Gemini Enterprise
+-   Seeded memories stay on the account. Re-running a file whose first rows are
+    `reset` clears them; otherwise ask the assistant to forget them, or remove
+    them by hand in Gemini Enterprise
     (**Settings › Personalization › Memories**).
 -   Verify a reset rather than assuming it. Making the last reset row
     `List everything you have saved about me.` puts the receipt in the results,

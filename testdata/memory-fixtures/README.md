@@ -180,8 +180,8 @@ Work through it in this order:
 
 Seeded memories persist on the account after the run and **no API can remove
 them** — the reset rows work only because the assistant honours the request
-conversationally, which is a behaviour rather than a guarantee. The run
-finishes by listing every seed query it sent.
+conversationally, which is a behaviour rather than a guarantee. The run itself
+says nothing about what it left; the checklist below is the record.
 
 Running this file again clears them, so teardown only matters when you are done
 with the account. To clear them now, either send `Forget everything you have

@@ -23,13 +23,13 @@ import {CSVRow} from './csv-row.model';
  * The `default_assistant` has no memory API: there is no endpoint to create,
  * list or delete a memory, and `streamAssist` takes no memory parameter. The
  * only way to put a memory in place is to hold the conversation that saves it,
- * and the only way to read one back is to ask in a *new* session, since a
- * memory recalled inside the session that wrote it proves nothing.
+ * the only way to read one back is to ask in a *new* session, since a memory
+ * recalled inside the session that wrote it proves nothing, and the only way
+ * to remove one is to ask the assistant to forget it.
  *
- * That shapes the whole design here: a memory evaluation is two phases of
- * ordinary rows separated by a barrier, not a fixture step with an API behind
- * it. It also means seeded memories cannot be deleted programmatically after
- * the run — see the teardown guidance in README.md.
+ * That shapes the whole design here: a memory evaluation is phases of ordinary
+ * rows separated by barriers, not fixture steps with an API behind them — see
+ * the guidance in README.md.
  */
 
 /**
