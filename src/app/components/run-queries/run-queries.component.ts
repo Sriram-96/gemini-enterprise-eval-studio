@@ -17,15 +17,46 @@
 import {CommonModule} from '@angular/common';
 import {ChangeDetectorRef, Component} from '@angular/core';
 
+import {resolveConcurrency} from '../../models/app-config.model';
 import {CsvService} from '../../services/csv.service';
 import {EvalService} from '../../services/eval.service';
 import {StateService} from '../../services/state.service';
 import {ConfigFormComponent} from '../shared/config-form/config-form.component';
 import {ColumnDef, CsvTableComponent} from '../shared/csv-table/csv-table.component';
-import {FileUploadComponent} from '../shared/file-upload/file-upload.component';
+import {ExcludedRow, FileUploadComponent, UploadedQueryset} from '../shared/file-upload/file-upload.component';
 import {ProgressBarComponent} from '../shared/progress-bar/progress-bar.component';
 
-const MAX_CONCURRENT_REQUESTS_FOR_QUERIES = 5;
+/**
+ * Shortest gap between two refreshes of the growing response table, in
+ * milliseconds. Re-rendering on every completed row makes a large run spend
+ * more time in change detection than in the API calls it is waiting on.
+ */
+const RESULTS_REFRESH_INTERVAL_MS = 400;
+
+/** Accounting for one run: every uploaded row lands in exactly one bucket. */
+export interface QueryRunSummary {
+  uploaded: number;
+  ran: number;
+  succeeded: number;
+  failed: number;
+  notRun: number;
+  excluded: number;
+}
+
+/** A generated response, as shown in the table. */
+interface ResponseRow {
+  query: string;
+  response: string;
+  errorCode?: string;
+  ttft: number;
+  ttfa: number;
+  ttlt: number;
+  tpot: number;
+  assistToken?: string;
+  projectId?: string;
+  region?: string;
+  engineId?: string;
+}
 
 /**
  * Component for running queries and generating responses.
@@ -56,12 +87,21 @@ export class RunQueriesComponent {
   ];
   responseFile: File|null = null;
   responseCsvRows: Array<Record<string, string>> = [];
-  responseResults: any[] = [];
+  responseResults: ResponseRow[] = [];
   isProcessingResponse = false;
   responseProgress = 0;
   totalRows = 0;
   completedRows = 0;
+  /**
+   * Accounting for the last run, so a tester can reconcile the table against
+   * the file they uploaded. Null before the first run.
+   */
+  runSummary: QueryRunSummary|null = null;
   private currentRunId = 0;
+  /** Rows set aside at upload, carried into the run's accounting. */
+  private excludedRows: ExcludedRow[] = [];
+  /** When the table was last refreshed, for coalescing. */
+  private lastRefreshMs = 0;
 
   constructor(
       private csvService: CsvService, private evalService: EvalService,
@@ -109,35 +149,51 @@ export class RunQueriesComponent {
     }
   }
 
-  startResponseGeneration(event: {file: File, rows: any[]}) {
+  startResponseGeneration(event: UploadedQueryset|
+                          {file: File, rows: Array<Record<string, string>>}) {
     this.responseFile = event.file;
     this.responseCsvRows = event.rows;
+    this.excludedRows = ('excluded' in event && event.excluded) || [];
     this.runResponseGeneration();
   }
 
   /**
    * Runs the response generation process for all rows.
+   *
+   * There is no cap on how many rows a run may contain. Each row gets its own
+   * slot up front and every slot is filled before the run ends — with a
+   * response, with the failure that stopped it, or with an explicit `NOT_RUN`
+   * marker — so no query can vanish between the uploaded file and the table.
    */
   async runResponseGeneration() {
     if (this.isProcessingResponse) return;
     const runId = ++this.currentRunId;
+    const rows = this.responseCsvRows;
     this.isProcessingResponse = true;
     this.responseResults = [];
     this.responseProgress = 0;
-    this.totalRows = this.responseCsvRows.length;
+    this.totalRows = rows.length;
     this.completedRows = 0;
+    this.runSummary = null;
+    this.lastRefreshMs = 0;
     this.step = 3;
     this.cdr.detectChanges();
 
-    const tasks = this.responseCsvRows.map(row => async () => {
+    // Filled in place so the table keeps the file's own order however the
+    // workers interleave, and so an empty slot at the end is provably a row
+    // that never ran.
+    const slots: Array<ResponseRow|undefined> = new Array(rows.length);
+
+    const tasks = rows.map((row, index) => async () => {
+      // Checked before the call, not after: a response that already came back
+      // is kept even if Stop was pressed while it was in flight.
       if (runId !== this.currentRunId || !this.isProcessingResponse) return;
 
-      const csvRow: any = {query: row['query']};
-      const result = await this.evalService.processRow(csvRow);
-      if (runId !== this.currentRunId || !this.isProcessingResponse) return;
-
-      this.responseResults = [
-        ...this.responseResults, {
+      const csvRow = {query: row['query'], golden: ''};
+      let slot: ResponseRow;
+      try {
+        const result = await this.evalService.processRow(csvRow);
+        slot = {
           query: result.query,
           response: result.fetched,
           errorCode: result.errorCode,
@@ -149,13 +205,22 @@ export class RunQueriesComponent {
           projectId: result.projectId,
           region: result.region,
           engineId: result.engineId
-        }
-      ];
+        };
+      } catch (error) {
+        // A rejection here would otherwise escape Promise.all and abandon
+        // every row still queued, without a trace of any of them.
+        console.error('Unhandled error generating a response:', error);
+        slot = this.failedRow(
+            csvRow.query,
+            error instanceof Error ? error.message : String(error));
+      }
+      if (runId !== this.currentRunId) return;
 
+      slots[index] = slot;
       this.completedRows++;
       this.responseProgress =
           Math.round((this.completedRows / this.totalRows) * 100);
-      this.cdr.detectChanges();
+      this.refresh(slots, false);
     });
 
     let index = 0;
@@ -166,17 +231,94 @@ export class RunQueriesComponent {
       }
     };
 
+    const concurrency =
+        resolveConcurrency(this.stateService.getCurrentConfig());
     const workers = [];
-    for (let i = 0;
-         i < Math.min(MAX_CONCURRENT_REQUESTS_FOR_QUERIES, tasks.length); i++) {
+    for (let i = 0; i < Math.min(concurrency, tasks.length); i++) {
       workers.push(worker());
     }
     await Promise.all(workers);
 
-    if (runId === this.currentRunId) {
-      this.isProcessingResponse = false;
-      this.cdr.detectChanges();
+    if (runId !== this.currentRunId) return;
+
+    // Rows the run never reached are written out explicitly rather than left
+    // as gaps, so the table and the CSV export cover the whole uploaded file.
+    for (let i = 0; i < slots.length; i++) {
+      if (!slots[i]) {
+        slots[i] = this.failedRow(
+            rows[i]?.['query'] ?? '',
+            'Not run: response generation was stopped before this row.',
+            'NOT_RUN');
+      }
     }
+
+    if (this.isProcessingResponse) {
+      this.responseProgress = 100;
+    }
+    this.isProcessingResponse = false;
+    this.runSummary = this.summarize(slots);
+    this.refresh(slots, true);
+  }
+
+  /**
+   * Refreshes the table from the slots gathered so far.
+   * @param slots The per-row slots, some possibly still empty.
+   * @param force Whether to refresh regardless of how recently it last
+   *     happened.
+   */
+  private refresh(slots: Array<ResponseRow|undefined>, force: boolean) {
+    const now = Date.now();
+    if (!force && now - this.lastRefreshMs < RESULTS_REFRESH_INTERVAL_MS) {
+      return;
+    }
+    this.lastRefreshMs = now;
+    this.responseResults = slots.filter((row): row is ResponseRow => !!row);
+    this.cdr.detectChanges();
+  }
+
+  /** Builds the placeholder row recorded for a query that produced no answer. */
+  private failedRow(query: string, message: string, errorCode = 'ERROR'):
+      ResponseRow {
+    return {
+      query,
+      response: message,
+      errorCode,
+      ttft: 0,
+      ttfa: 0,
+      ttlt: 0,
+      tpot: 0
+    };
+  }
+
+  /** Reconciles the finished run against the uploaded file. */
+  private summarize(slots: Array<ResponseRow|undefined>): QueryRunSummary {
+    let succeeded = 0;
+    let failed = 0;
+    let notRun = 0;
+    for (const row of slots) {
+      if (!row || row.errorCode === 'NOT_RUN') {
+        notRun++;
+      } else if (row.errorCode) {
+        failed++;
+      } else {
+        succeeded++;
+      }
+    }
+    return {
+      uploaded: slots.length + this.excludedRows.length,
+      ran: succeeded + failed,
+      succeeded,
+      failed,
+      notRun,
+      excluded: this.excludedRows.length
+    };
+  }
+
+  /** Whether the last run left any row unanswered. */
+  hasUnfinishedRows(): boolean {
+    return !!this.runSummary &&
+        (this.runSummary.failed > 0 || this.runSummary.notRun > 0 ||
+         this.runSummary.excluded > 0);
   }
 
   stopResponseGeneration() {

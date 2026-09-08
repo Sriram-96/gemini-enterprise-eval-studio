@@ -178,6 +178,29 @@
           </div>
         </div>
       </div>
+
+      <div>
+        <label for="maxConcurrentRequests" class="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1"
+          ><span>Parallel Requests</span
+          ><app-info-tooltip
+            class="inline-flex"
+            text="How many rows are sent to the Assistant at once. There is no limit on how many rows a run may contain; this only controls how fast they are worked through. Raise it to shorten a large run, lower it if you hit quota. Turns of the same conversation always run one after another regardless."
+          ></app-info-tooltip
+        ></label>
+        <input
+          id="maxConcurrentRequests"
+          [ngModel]="config.maxConcurrentRequests"
+          (ngModelChange)="onConcurrencyChange($event)"
+          type="number"
+          [min]="minConcurrentRequests"
+          [max]="maxConcurrentRequests"
+          step="1"
+          class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+        />
+        <p class="mt-1 text-xs text-gray-500">
+          {{ minConcurrentRequests }}–{{ maxConcurrentRequests }} rows in flight at once (default {{ defaultConcurrentRequests }}).
+        </p>
+      </div>
     </div>
   </div>
 

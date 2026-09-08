@@ -129,40 +129,258 @@ describe('RunEvaluationComponent', () => {
     expect(component.isProcessing).toBeFalse();
   }));
 
-  it('should stop evaluation mid-way when stopEvaluation is called', fakeAsync(() => {
-    const fixture = TestBed.createComponent(RunEvaluationComponent);
-    const component = fixture.componentInstance;
-    fixture.detectChanges();
+  it('should keep the rows whose answers already came back when stopEvaluation is called',
+     fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
 
-    const sampleRows = [
-      {query: 'q1', golden: 'g1'},
-      {query: 'q2', golden: 'g2'}
-    ];
+       const sampleRows = [
+         {query: 'q1', golden: 'g1'},
+         {query: 'q2', golden: 'g2'}
+       ];
 
-    let rowCount = 0;
-    mockEvalService.processRow.and.callFake(async (row, progressCb) => {
-      rowCount++;
-      if (rowCount === 2) {
-        component.stopEvaluation();
-      }
-      return {
-        query: row.query,
-        golden: row.golden,
-        fetched: `fetched-${row.query}`,
-        ttft: 10,
-        ttfa: 20,
-        ttlt: 30,
-        tpot: 0,
-        score: 0.9
-      };
-    });
+       let rowCount = 0;
+       mockEvalService.processRow.and.callFake(async (row, progressCb) => {
+         rowCount++;
+         if (rowCount === 2) {
+           component.stopEvaluation();
+         }
+         return {
+           query: row.query,
+           golden: row.golden,
+           fetched: `fetched-${row.query}`,
+           ttft: 10,
+           ttfa: 20,
+           ttlt: 30,
+           tpot: 0,
+           score: 0.9
+         };
+       });
 
-    component.startEvaluation({file: new File([], 'test.csv'), rows: sampleRows});
-    tick();
+       component.startEvaluation(
+           {file: new File([], 'test.csv'), rows: sampleRows});
+       tick();
 
-    expect(component.completedRows).toBe(0);
-    expect(component.isProcessing).toBeFalse();
-  }));
+       // Both queries were actually sent and both answers arrived. Discarding
+       // them because Stop was pressed while they were in flight would be the
+       // silent skip the accounting exists to prevent.
+       expect(component.completedRows).toBe(2);
+       expect(resultsSubject.value.map(row => row.fetched)).toEqual([
+         'fetched-q1', 'fetched-q2'
+       ]);
+       expect(component.isProcessing).toBeFalse();
+     }));
+
+  it('should record a NOT_RUN row for every query the stopped run never reached',
+     fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
+
+       const sampleRows = [
+         {query: 'q1', golden: 'g1'},
+         {query: 'q2', golden: 'g2'},
+         {query: 'q3', golden: 'g3'},
+       ];
+
+       // One worker, so the rows are worked through strictly in order and the
+       // stop lands with two of them still queued.
+       configSubject.next({...configSubject.value, maxConcurrentRequests: 1});
+       mockEvalService.processRow.and.callFake(async (row) => {
+         component.stopEvaluation();
+         return {
+           query: row.query,
+           golden: row.golden,
+           fetched: `fetched-${row.query}`,
+           ttft: 10,
+           ttfa: 20,
+           ttlt: 30,
+           tpot: 0,
+           score: 0.9
+         };
+       });
+
+       component.startEvaluation(
+           {file: new File([], 'test.csv'), rows: sampleRows});
+       tick();
+
+       expect(mockEvalService.processRow).toHaveBeenCalledTimes(1);
+
+       // Every uploaded query is still a row, in file order: the two that
+       // never ran say so rather than quietly missing from the results.
+       const results = resultsSubject.value;
+       expect(results.map(row => row.query)).toEqual(['q1', 'q2', 'q3']);
+       expect(results[0].errorCode).toBeFalsy();
+       expect(results.slice(1).map(row => row.errorCode)).toEqual([
+         'NOT_RUN', 'NOT_RUN'
+       ]);
+       expect(results[1].fetched).toContain('stopped');
+       expect(component.runSummary).toEqual({
+         uploaded: 3,
+         ran: 1,
+         succeeded: 1,
+         failed: 0,
+         notRun: 2,
+         excluded: 0
+       });
+     }));
+
+  it('should record a failed row and finish the run when processRow throws',
+     fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
+
+       mockEvalService.processRow.and.callFake(async (row) => {
+         if (row.query === 'q1') {
+           throw new Error('boom');
+         }
+         return {
+           query: row.query,
+           golden: row.golden,
+           fetched: `fetched-${row.query}`,
+           ttft: 10,
+           ttfa: 20,
+           ttlt: 30,
+           tpot: 0,
+           score: 0.9
+         };
+       });
+
+       component.startEvaluation({
+         file: new File([], 'test.csv'),
+         rows: [{query: 'q1', golden: 'g1'}, {query: 'q2', golden: 'g2'}]
+       });
+       tick();
+
+       // A thrown row must not take the rest of the run down with it, and it
+       // must still appear in the results carrying its failure.
+       const results = resultsSubject.value;
+       expect(results.map(row => row.query)).toEqual(['q1', 'q2']);
+       expect(results[0].errorCode).toBe('ERROR');
+       expect(results[0].fetched).toContain('boom');
+       expect(results[1].fetched).toBe('fetched-q2');
+       expect(component.isProcessing).toBeFalse();
+       expect(component.runSummary?.ran).toBe(2);
+       expect(component.runSummary?.failed).toBe(1);
+     }));
+
+  it('should run a queryset far larger than the old 100 row cap, keeping every row',
+     fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
+
+       const sampleRows = Array.from(
+           {length: 750}, (_, i) => ({query: `q${i}`, golden: `g${i}`}));
+
+       mockEvalService.processRow.and.callFake(async (row) => ({
+                                                 query: row.query,
+                                                 golden: row.golden,
+                                                 fetched: `fetched-${row.query}`,
+                                                 ttft: 10,
+                                                 ttfa: 20,
+                                                 ttlt: 30,
+                                                 tpot: 0,
+                                                 score: 0.9
+                                               }));
+
+       component.startEvaluation(
+           {file: new File([], 'test.csv'), rows: sampleRows});
+       tick();
+
+       expect(mockEvalService.processRow).toHaveBeenCalledTimes(750);
+       expect(component.completedRows).toBe(750);
+       const results = resultsSubject.value;
+       expect(results.length).toBe(750);
+       // In the file's own order, however the workers interleaved.
+       expect(results.map(row => row.query)).toEqual(
+           sampleRows.map(row => row.query));
+       expect(component.runSummary).toEqual({
+         uploaded: 750,
+         ran: 750,
+         succeeded: 750,
+         failed: 0,
+         notRun: 0,
+         excluded: 0
+       });
+     }));
+
+  it('should run every turn of a long multi-turn conversation in order on one session',
+     fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
+
+       const turns = Array.from({length: 200}, (_, i) => ({
+                                  query: `turn${i + 1}`,
+                                  golden: 'g',
+                                  conversation_id: 'conv-a',
+                                  turn: String(i + 1),
+                                }));
+
+       const seen: Array<{query: string, session?: string}> = [];
+       mockEvalService.processRow.and.callFake(
+           async (row, _progressCb, sessionContext) => {
+             seen.push({query: row.query, session: sessionContext?.session});
+             return {
+               query: row.query,
+               golden: row.golden,
+               fetched: `fetched-${row.query}`,
+               ttft: 10,
+               ttfa: 20,
+               ttlt: 30,
+               tpot: 0,
+               score: 0.9,
+               session: `session-after-${row.query}`,
+             };
+           });
+
+       component.startEvaluation(
+           {file: new File([], 'test.csv'), rows: turns});
+       tick();
+
+       expect(seen.length).toBe(200);
+       expect(seen.map(call => call.query))
+           .toEqual(turns.map(turn => turn.query));
+       // Every turn after the first continued the session the previous one
+       // returned, so the conversation stayed intact over its whole length.
+       expect(seen[0].session).toBeUndefined();
+       expect(seen[199].session).toBe('session-after-turn199');
+       expect(resultsSubject.value.length).toBe(200);
+       expect(resultsSubject.value[199].turn).toBe(200);
+     }));
+
+  it('should count rows excluded at upload in the run summary', fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
+
+       mockEvalService.processRow.and.callFake(async (row) => ({
+                                                 query: row.query,
+                                                 golden: row.golden,
+                                                 fetched: 'fetched',
+                                                 ttft: 10,
+                                                 ttfa: 20,
+                                                 ttlt: 30,
+                                                 tpot: 0,
+                                                 score: 0.9
+                                               }));
+
+       component.startEvaluation({
+         file: new File([], 'test.csv'),
+         rows: [{query: 'q1', golden: 'g1'}],
+         excluded: [{line: 3, reason: 'blank query'}]
+       });
+       tick();
+
+       // The uploaded count reconciles against the file, not just against the
+       // rows that were runnable.
+       expect(component.runSummary?.uploaded).toBe(2);
+       expect(component.runSummary?.ran).toBe(1);
+       expect(component.runSummary?.excluded).toBe(1);
+     }));
 
   it('should not run evaluation concurrently if called again while processing',
      fakeAsync(() => {

@@ -33,6 +33,9 @@ violate data privacy policies.
     the data stores and connectors they came from, the tools it ran and its
     thinking, so a tester can confirm *how* an answer was reached and not only
     that it sounded plausible. See [Verifying Retrieval](#verifying-retrieval).
+-   **Query Sets of Any Size, Fully Accounted For**: No row limit, and every
+    uploaded row is reconciled against a result so nothing is silently skipped.
+    See [Running large query sets](#running-large-query-sets).
 
 ## Data Privacy and Governance
 
@@ -120,6 +123,52 @@ Then start the server in either **Auth Mode** (full stack) or **No-Auth Mode** (
   npm run start:no-auth
   ```
   By default, the frontend listens on port 4200.
+
+## Running large query sets
+
+There is no cap on the number of rows in an uploaded query set, and no cap on
+the number of turns in a multi-turn conversation. A file with thousands of rows
+runs in full.
+
+Size alone is not the point, though — a tester needs to trust that the rows
+they uploaded are the rows that ran. Every run is therefore accounted for
+per row:
+
+-   **Nothing is dropped at upload.** Rows whose `query` cell is blank cannot be
+    sent anywhere, so they are set aside rather than run as empty queries — but
+    they are listed with their line numbers before the run starts, and they
+    stay in the run's totals as *excluded*. Lines the CSV parser could not read
+    are reported the same way instead of vanishing.
+-   **Results keep the order of the file.** Each row is written to its own slot,
+    so row 812 of the results is row 812 of the upload no matter which request
+    finished first.
+-   **A failure is a row, not a lost row.** A request that errors is recorded
+    with its error, and the run carries on. There are no automatic retries: a
+    failed row is reported as failed rather than quietly re-attempted.
+-   **Stopping early is explicit.** Answers that already came back are kept, and
+    every row that never ran is written out as `NOT_RUN` — so the exported CSV
+    still has one line per uploaded row.
+-   **The run summary reconciles the two ends.** When a run finishes, a banner
+    states how many of the uploaded rows ran, and how many answered, failed,
+    were excluded, or never ran. It is green only when those numbers add up
+    with nothing failed, excluded, or skipped.
+
+**Reading the results.** The results table pages rather than rendering every row
+at once (50 rows per page by default; the footer offers 25/50/100/250/All).
+Paging is display only — **Export CSV** (and, on the Run Evaluation tab,
+**Download traces (JSONL)**) always writes the entire result set, not the
+visible page.
+
+**Throughput.** Rows run in parallel, 5 at a time by default. Adjust
+**Parallel Requests** in the configuration form (1–50) to trade run time against
+the load placed on your endpoint and its quota. Turns within one multi-turn
+conversation always run sequentially on a single session — only separate
+conversations overlap.
+
+> **Note**: Multi-turn grouping by `conversation_id` applies to the
+> **Run Evaluation** tab. The **Run Queries** tab treats every row as an
+> independent single-turn query; it shares the same no-limit accounting,
+> summary and pagination.
 
 ## Verifying Retrieval
 

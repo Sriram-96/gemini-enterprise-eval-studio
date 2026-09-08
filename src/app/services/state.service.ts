@@ -18,7 +18,7 @@ import {Injectable} from '@angular/core';
 import {BehaviorSubject, Subject} from 'rxjs';
 import {debounceTime, map} from 'rxjs/operators';
 
-import {AppConfig, Engine} from '../models/app-config.model';
+import {AppConfig, DEFAULT_CONCURRENT_REQUESTS, Engine} from '../models/app-config.model';
 import {ResultRow} from '../models/result-row.model';
 
 /**
@@ -59,7 +59,8 @@ export class StateService {
       autoRaterInstruction:
           'You are an expert evaluator. Compare the fetched response to the golden response for the given query. Calculate a semantic similarity score between 0.0 and 1.0...',
       selectedDataStores: [],
-      enableWebSearch: false
+      enableWebSearch: false,
+      maxConcurrentRequests: DEFAULT_CONCURRENT_REQUESTS
     };
 
     let savedConfig: Partial<AppConfig> = {};

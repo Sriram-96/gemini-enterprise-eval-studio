@@ -32,7 +32,7 @@
       </thead>
       <tbody class="bg-white divide-y divide-gray-200">
         <tr
-          *ngFor="let row of data; let i = index"
+          *ngFor="let row of pagedData; let i = index; trackBy: trackByIndex"
           class="transition-colors"
           [ngClass]="
             rowErrorKey && row[rowErrorKey]
@@ -53,14 +53,14 @@
                 'whitespace-pre-wrap': col.truncate
               }"
             >
-              <span>{{ col.truncate && !isExpanded(i, col.key) ? truncate(row[col.key]) : row[col.key] }}</span>
+              <span>{{ col.truncate && !isExpanded(pageStart + i, col.key) ? truncate(row[col.key]) : row[col.key] }}</span>
 
               <button
                 *ngIf="col.truncate && row[col.key]?.length > 100"
-                (click)="toggleExpand(i, col.key)"
+                (click)="toggleExpand(pageStart + i, col.key)"
                 class="block mt-1 px-1.5 py-0.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                {{ isExpanded(i, col.key) ? "Show less" : "Show more" }}
+                {{ isExpanded(pageStart + i, col.key) ? "Show less" : "Show more" }}
               </button>
             </div>
             <!-- Markdown Type -->
@@ -71,16 +71,16 @@
               <div
                 [innerHTML]="
                   renderMarkdown(
-                    col.truncate && !isExpanded(i, col.key) ? truncate(row[col.key]) : row[col.key]
+                    col.truncate && !isExpanded(pageStart + i, col.key) ? truncate(row[col.key]) : row[col.key]
                   )
                 "
               ></div>
               <button
                 *ngIf="col.truncate && row[col.key]?.length > 100"
-                (click)="toggleExpand(i, col.key)"
+                (click)="toggleExpand(pageStart + i, col.key)"
                 class="block mt-1 px-1.5 py-0.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                {{ isExpanded(i, col.key) ? "Show less" : "Show more" }}
+                {{ isExpanded(pageStart + i, col.key) ? "Show less" : "Show more" }}
               </button>
             </div>
 
@@ -127,7 +127,7 @@
           </td>
           <td *ngIf="rowActionLabel" class="px-6 py-4 text-sm">
             <button
-              (click)="rowAction.emit(i)"
+              (click)="rowAction.emit(pageStart + i)"
               class="px-2.5 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               {{ rowActionLabel }}
@@ -136,6 +136,62 @@
         </tr>
       </tbody>
     </table>
+  </div>
+  <!-- Pagination: the table renders one page at a time so a run of any size
+       stays responsive. Export CSV always covers every row. -->
+  <div
+    *ngIf="data.length > 0"
+    class="px-4 py-3 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3"
+  >
+    <div class="text-sm text-gray-600">
+      Showing {{ pageStart + 1 | number }}–{{ pageEnd | number }} of {{ data.length | number }} row{{ data.length === 1 ? '' : 's' }}
+    </div>
+    <div class="flex items-center gap-3">
+      <label class="text-sm text-gray-600 flex items-center gap-2">
+        <span>Rows per page</span>
+        <select
+          aria-label="Rows per page"
+          [ngModel]="pageSize"
+          (ngModelChange)="setPageSize($event)"
+          class="p-1 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500"
+        >
+          <option *ngFor="let size of pageSizeOptions" [ngValue]="size">
+            {{ size === 0 ? "All" : size }}
+          </option>
+        </select>
+      </label>
+      <div *ngIf="pageCount > 1" class="flex items-center gap-1">
+        <button
+          (click)="goToPage(0)"
+          [disabled]="page === 0"
+          class="px-2 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          First
+        </button>
+        <button
+          (click)="goToPage(page - 1)"
+          [disabled]="page === 0"
+          class="px-2 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Previous
+        </button>
+        <span class="text-sm text-gray-600 px-1">Page {{ page + 1 | number }} of {{ pageCount | number }}</span>
+        <button
+          (click)="goToPage(page + 1)"
+          [disabled]="page >= pageCount - 1"
+          class="px-2 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Next
+        </button>
+        <button
+          (click)="goToPage(pageCount - 1)"
+          [disabled]="page >= pageCount - 1"
+          class="px-2 py-1 border border-gray-300 rounded text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Last
+        </button>
+      </div>
+    </div>
   </div>
   <div class="px-4 py-3 bg-gray-50 text-right sm:px-6">
     <ng-content select="[footer]"></ng-content>

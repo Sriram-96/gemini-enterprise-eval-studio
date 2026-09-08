@@ -70,6 +70,21 @@
 
   <!-- Results Table -->
   <div [hidden]="step !== 3">
+    <!-- Run Accounting: every uploaded row lands in exactly one bucket here. -->
+    <div
+      *ngIf="runSummary"
+      class="p-4 rounded-md border"
+      [ngClass]="hasUnfinishedRows() ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'"
+    >
+      <p class="text-sm" [ngClass]="hasUnfinishedRows() ? 'text-amber-800' : 'text-green-800'">
+        <span class="font-medium">
+          {{ runSummary.ran | number }} of {{ runSummary.uploaded | number }} uploaded row{{ runSummary.uploaded === 1 ? '' : 's' }} ran.
+        </span>
+        {{ runSummary.succeeded | number }} answered<span *ngIf="runSummary.failed">, {{ runSummary.failed | number }} failed</span><span *ngIf="runSummary.notRun">, {{ runSummary.notRun | number }} not run (stopped)</span><span *ngIf="runSummary.excluded">, {{ runSummary.excluded | number }} excluded at upload (blank query)</span>.
+        <span *ngIf="runSummary.failed || runSummary.notRun">Every one of them is a row in the table below and in the CSV export, marked with its error code.</span>
+      </p>
+    </div>
+
     <app-csv-table
       [data]="responseResults"
       [columns]="columns"

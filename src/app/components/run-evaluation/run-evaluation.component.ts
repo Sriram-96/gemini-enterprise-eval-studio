@@ -20,7 +20,7 @@ import {FormsModule} from '@angular/forms';
 import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
-import {AppConfig} from '../../models/app-config.model';
+import {AppConfig, resolveConcurrency} from '../../models/app-config.model';
 import {CSVRow} from '../../models/csv-row.model';
 import {ResultRow} from '../../models/result-row.model';
 import {Scorer, ScorerRunResult, summarizeScorerResults} from '../../scoring/scorer';
@@ -30,11 +30,44 @@ import {EvalService} from '../../services/eval.service';
 import {StateService} from '../../services/state.service';
 import {ConfigFormComponent} from '../shared/config-form/config-form.component';
 import {ColumnDef, CsvTableComponent} from '../shared/csv-table/csv-table.component';
-import {FileUploadComponent} from '../shared/file-upload/file-upload.component';
+import {ExcludedRow, FileUploadComponent, UploadedQueryset} from '../shared/file-upload/file-upload.component';
 import {ProgressBarComponent} from '../shared/progress-bar/progress-bar.component';
 import {TracePanelComponent} from '../shared/trace-panel/trace-panel.component';
 
-const MAX_CONCURRENT_REQUESTS_FOR_EVALUATION = 5;
+/**
+ * Shortest gap between two publications of the growing result set, in
+ * milliseconds.
+ *
+ * Publishing goes through `StateService.setResults`, which deep-clones the
+ * whole array — traces included. Doing that once per completed row is O(n^2)
+ * over the run and freezes the browser on a large queryset, so publications
+ * are coalesced. The final publication is always forced, so the table and the
+ * export never miss a row.
+ */
+const RESULTS_PUBLISH_INTERVAL_MS = 400;
+
+/** Accounting for one run: every uploaded row ends up in exactly one bucket. */
+export interface RunSummary {
+  /** Rows in the uploaded file, runnable or not. */
+  uploaded: number;
+  /** Runnable rows that were attempted. */
+  ran: number;
+  /** Attempted rows that produced an answer. */
+  succeeded: number;
+  /** Attempted rows that came back as an error or a skip. */
+  failed: number;
+  /** Runnable rows never attempted, because the run was stopped. */
+  notRun: number;
+  /** Rows set aside at upload, e.g. for a blank query. */
+  excluded: number;
+}
+
+/** One uploaded row together with its position in the file. */
+interface IndexedRow {
+  row: CSVRow;
+  /** 0-based index into the uploaded rows, and into the result slots. */
+  index: number;
+}
 
 /** The columns shown before the scores, whichever scorers ran. */
 const BASE_COLUMNS: readonly ColumnDef[] = [
@@ -95,8 +128,15 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
   /** The row whose trace is open in the inspector, if any. */
   inspectedRow: ResultRow|null = null;
   errorMessage: string | null = null;
+  /**
+   * Accounting for the last run, so a tester can reconcile the results against
+   * the file they uploaded. Null before the first run.
+   */
+  runSummary: RunSummary|null = null;
   private readonly destroy$ = new Subject<void>();
   private currentRunId = 0;
+  /** When the growing result set was last published, for coalescing. */
+  private lastPublishMs = 0;
 
   columns: ColumnDef[] = [...BASE_COLUMNS, SINGLE_SCORE_COLUMN];
 
@@ -275,22 +315,43 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
 
   /**
    * Starts the evaluation process for the uploaded CSV rows.
-   * @param event The event containing the file and parsed rows.
+   *
+   * There is no cap on how many rows a run may contain. Every runnable row
+   * gets its own slot up front and every slot is filled before the run ends:
+   * with the answer, with the failure that stopped it, or with an explicit
+   * `NOT_RUN` marker if the tester stopped the run first. A row can therefore
+   * never disappear between the uploaded file and the results table.
+   *
+   * @param event The uploaded file, its runnable rows, and the rows set aside
+   *     at upload.
    */
-  async startEvaluation(event: {file: File, rows: CSVRow[]}) {
+  async startEvaluation(event: UploadedQueryset|{file: File, rows: CSVRow[]}) {
     if (this.isProcessing) return;
+    const rows = event.rows as CSVRow[];
+    const excluded: ExcludedRow[] = ('excluded' in event && event.excluded) || [];
     const runId = ++this.currentRunId;
     this.errorMessage = null;
     this.isProcessing = true;
     this.progress = 0;
-    this.totalRows = event.rows.length;
+    this.totalRows = rows.length;
     this.completedRows = 0;
     this.step = 3;
     this.stateService.setResults([]);
+    this.lastPublishMs = 0;
+    this.runSummary = null;
     this.cdr.detectChanges();
-    const results: ResultRow[] = [];
 
-    if (this.totalRows === 0) return;
+    // One slot per uploaded row, filled in place. Slots keep the results in
+    // the file's own order however the workers interleave, and a slot still
+    // empty at the end is a row that demonstrably did not run.
+    const slots: Array<ResultRow|undefined> = new Array(rows.length);
+
+    if (this.totalRows === 0) {
+      this.isProcessing = false;
+      this.runSummary = this.summarize(slots, excluded);
+      this.cdr.detectChanges();
+      return;
+    }
 
     // Rows sharing a conversation_id are turns of one multi-turn
     // conversation and must run sequentially against the same Assistant
@@ -298,35 +359,50 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     // visibility). Rows without a conversation_id are independent
     // single-turn queries, each its own one-row "conversation" below, and
     // continue to run freely across the worker pool as before.
-    const conversations = this.groupIntoConversations(event.rows);
+    const conversations = this.groupIntoConversations(rows);
 
     const tasks = conversations.map(turns => async () => {
       const isMultiTurn = turns.length > 1;
       let session: string|undefined;
 
       for (let i = 0; i < turns.length; i++) {
+        // Checked before starting a turn, never after finishing one: a row
+        // whose answer already came back is recorded even if the tester
+        // pressed Stop while it was in flight. Throwing away completed work
+        // would be exactly the silent skip this accounting exists to prevent.
         if (runId !== this.currentRunId || !this.isProcessing) return;
-        const row = turns[i];
+        const {row, index} = turns[i];
 
-        const result = await this.evalService.processRow(row, undefined, {session});
+        let result: ResultRow;
+        try {
+          result = await this.evalService.processRow(row, undefined, {session});
+        } catch (error) {
+          // processRow is meant to turn every failure into a row, but a bug or
+          // an out-of-memory in one row must not take the rest of the run down
+          // with it: without this the rejection would escape Promise.all and
+          // leave every remaining row unrun and unreported.
+          console.error('Unhandled error evaluating row:', error);
+          result = this.failedRow(
+              row, error instanceof Error ? error.message : String(error));
+        }
         session = result.session;
-        if (runId !== this.currentRunId || !this.isProcessing) return;
+        // A newer run now owns the results; writing into it would corrupt it.
+        if (runId !== this.currentRunId) return;
 
         if (result.scoreError && !this.errorMessage) {
           this.errorMessage =
               `Scoring failed for some rows: ${result.scoreError}`;
         }
 
-        results.push({
+        slots[index] = {
           ...result,
           conversationId: isMultiTurn ? row.conversation_id : undefined,
           turn: isMultiTurn ? (Number(row.turn) || i + 1) : undefined,
-        });
-        this.stateService.setResults(results);
+        };
         this.completedRows++;
         this.progress =
             Math.round((this.completedRows / this.totalRows) * 100);
-        this.cdr.detectChanges();
+        this.publish(slots, false);
       }
     });
 
@@ -338,19 +414,115 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
       }
     };
 
+    const concurrency =
+        resolveConcurrency(this.stateService.getCurrentConfig());
     const workers = [];
-    for (let i = 0; i < Math.min(MAX_CONCURRENT_REQUESTS_FOR_EVALUATION, tasks.length); i++) {
+    for (let i = 0; i < Math.min(concurrency, tasks.length); i++) {
       workers.push(worker());
     }
     await Promise.all(workers);
 
+    if (runId !== this.currentRunId) return;
+
+    // Any slot still empty belongs to a row the run never reached. It is
+    // written out as an explicit NOT_RUN row rather than left as a gap, so the
+    // table and the CSV export both account for the whole uploaded file.
+    for (let i = 0; i < slots.length; i++) {
+      if (!slots[i]) {
+        slots[i] = this.failedRow(
+            rows[i], 'Not run: the evaluation was stopped before this row.',
+            'NOT_RUN');
+      }
+    }
+
     if (this.isProcessing) {
       this.progress = 100;
     }
-    if (runId === this.currentRunId) {
-      this.isProcessing = false;
-      this.cdr.detectChanges();
+    this.isProcessing = false;
+    this.runSummary = this.summarize(slots, excluded);
+    this.publish(slots, true);
+  }
+
+  /**
+   * Publishes the results gathered so far.
+   *
+   * Publication deep-clones the whole result set, so intermediate updates are
+   * coalesced to keep a long run from spending all its time cloning. The final
+   * publication is forced and therefore always complete.
+   *
+   * @param slots The per-row slots, some possibly still empty.
+   * @param force Whether to publish regardless of how recently it last
+   *     happened.
+   */
+  private publish(slots: Array<ResultRow|undefined>, force: boolean) {
+    const now = Date.now();
+    if (!force && now - this.lastPublishMs < RESULTS_PUBLISH_INTERVAL_MS) {
+      return;
     }
+    this.lastPublishMs = now;
+    this.stateService.setResults(
+        slots.filter((row): row is ResultRow => !!row));
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * Builds the placeholder row recorded for a query that produced no answer.
+   * @param row The uploaded row.
+   * @param message What went wrong, shown in the Fetched column.
+   * @param errorCode Structured code for the failure.
+   */
+  private failedRow(row: CSVRow, message: string, errorCode = 'ERROR'):
+      ResultRow {
+    return {
+      query: row?.query ?? '',
+      golden: row?.golden ?? '',
+      fetched: message,
+      errorCode,
+      thoughts: '',
+      expectedSources: row?.['expected_sources'] ?? '',
+      ttft: 0,
+      ttfa: 0,
+      ttlt: 0,
+      tpot: 0,
+      score: 0,
+    };
+  }
+
+  /**
+   * Reconciles the finished run against the uploaded file.
+   * @param slots The per-row slots, all filled by the time this is called.
+   * @param excluded Rows set aside at upload.
+   */
+  private summarize(
+      slots: Array<ResultRow|undefined>,
+      excluded: ExcludedRow[]): RunSummary {
+    let succeeded = 0;
+    let failed = 0;
+    let notRun = 0;
+    for (const row of slots) {
+      if (!row || row.errorCode === 'NOT_RUN') {
+        notRun++;
+      } else if (row.errorCode) {
+        failed++;
+      } else {
+        succeeded++;
+      }
+    }
+    return {
+      uploaded: slots.length + excluded.length,
+      ran: succeeded + failed,
+      succeeded,
+      failed,
+      notRun,
+      excluded: excluded.length,
+    };
+  }
+
+  /** Whether the last run left any row unanswered. */
+  hasUnfinishedRows(): boolean {
+    return !!this.runSummary &&
+        (this.runSummary.failed > 0 || this.runSummary.notRun > 0 ||
+         this.runSummary.excluded > 0);
   }
 
   /** Gets the scoring strategies selected in the configuration, in run order. */
@@ -473,30 +645,38 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
    * value (ascending); rows without a `turn` keep their original relative
    * order. Rows with no conversation_id each become their own
    * single-row group, matching today's single-turn behavior.
+   *
+   * Each row keeps its index in the uploaded file, so that however the turns
+   * are reordered or the conversations interleave, every result lands back in
+   * the slot of the row it came from. A conversation may be arbitrarily long:
+   * its turns simply run one after another within one task.
    */
-  private groupIntoConversations(rows: CSVRow[]): CSVRow[][] {
+  private groupIntoConversations(rows: CSVRow[]): IndexedRow[][] {
     const order: string[] = [];
-    const groups = new Map<string, CSVRow[]>();
+    const groups = new Map<string, IndexedRow[]>();
     let singletonIndex = 0;
 
-    for (const row of rows) {
+    rows.forEach((row, index) => {
       const id = row.conversation_id?.trim();
       if (!id) {
         const key = `__single_${singletonIndex++}`;
         order.push(key);
-        groups.set(key, [row]);
-        continue;
+        groups.set(key, [{row, index}]);
+        return;
       }
       if (!groups.has(id)) {
         order.push(id);
         groups.set(id, []);
       }
-      groups.get(id)!.push(row);
-    }
+      groups.get(id)!.push({row, index});
+    });
 
     for (const [id, groupRows] of groups) {
       if (!id.startsWith('__single_')) {
-        groupRows.sort((a, b) => (Number(a.turn) || 0) - (Number(b.turn) || 0));
+        // Stable by construction: entries with no `turn` compare equal and
+        // Array.prototype.sort preserves their file order.
+        groupRows.sort(
+            (a, b) => (Number(a.row.turn) || 0) - (Number(b.row.turn) || 0));
       }
     }
 

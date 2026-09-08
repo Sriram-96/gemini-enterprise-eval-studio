@@ -135,8 +135,8 @@ export class CompareEvalsComponent {
       this.recentError = null;
     }
 
-    this.csvService.parseCSV(file, (data) => {
-      const normalizedData = this.normalizeRows(data);
+    this.csvService.parseCSV(file, (parsed) => {
+      const normalizedData = this.normalizeRows(parsed.rows);
 
       if (normalizedData.length > 0) {
         const headers = Object.keys(normalizedData[0]);

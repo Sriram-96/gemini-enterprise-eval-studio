@@ -21,7 +21,7 @@ import {FormsModule} from '@angular/forms';
 import {Subject} from 'rxjs';
 import {takeUntil} from 'rxjs/operators';
 
-import {AppConfig, CollectionComponent, DataStoreComponent, Engine, WidgetConfigResponse} from '../../../models/app-config.model';
+import {AppConfig, CollectionComponent, DataStoreComponent, DEFAULT_CONCURRENT_REQUESTS, Engine, MAX_CONCURRENT_REQUESTS, MIN_CONCURRENT_REQUESTS, resolveConcurrency, WidgetConfigResponse} from '../../../models/app-config.model';
 import {Scorer} from '../../../scoring/scorer';
 import {ScorerRegistry} from '../../../scoring/scorer.registry';
 import {AuthService} from '../../../services/auth.service';
@@ -68,8 +68,13 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
     autoRaterModel: '',
     autoRaterInstruction: '',
     selectedDataStores: [],
-    enableWebSearch: false
+    enableWebSearch: false,
+    maxConcurrentRequests: DEFAULT_CONCURRENT_REQUESTS
   };
+
+  readonly minConcurrentRequests = MIN_CONCURRENT_REQUESTS;
+  readonly maxConcurrentRequests = MAX_CONCURRENT_REQUESTS;
+  readonly defaultConcurrentRequests = DEFAULT_CONCURRENT_REQUESTS;
 
   autoRaterModels: string[] = ['gemini-3.1-pro-preview', 'gemini-3.5-flash'];
   autoRaterErrorMessage = '';
@@ -457,6 +462,18 @@ export class ConfigFormComponent implements OnInit, OnDestroy {
    */
   onConfigChange() {
     this.stateService.setConfig(this.config);
+  }
+
+  /**
+   * Applies a new parallel-request count, clamped to the supported range so a
+   * typo cannot start a run with zero workers (which would never finish) or an
+   * unbounded fan-out.
+   * @param value The raw value from the number input.
+   */
+  onConcurrencyChange(value: unknown) {
+    this.config.maxConcurrentRequests =
+        resolveConcurrency({maxConcurrentRequests: Number(value)});
+    this.onConfigChange();
   }
 
   /**
