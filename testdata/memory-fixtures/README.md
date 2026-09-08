@@ -67,10 +67,11 @@ because turn *n* is sent with the session returned by turn *n − 1*.
 ## The reset rows
 
 The two `reset` rows are what make this file give the same answer twice.
-Memories key off the token's principal, so a second run on the same account
-would otherwise start with everything the first run left behind — and that
-leftover state silently invalidates the sharpest rows in the set (see
-[Re-running](#re-running)).
+Memories key off the token's principal — a different `userPseudoId`, and no
+session at all, were both observed reading the same store — so a second run on
+the same account would otherwise start with everything the first run left
+behind, and that leftover state silently invalidates the sharpest rows in the
+set (see [Re-running](#re-running)).
 
 There is no delete API, so the deletion is a conversation like everything else:
 turn 1 asks the assistant to forget everything, turn 2 asks it to list what it
@@ -83,12 +84,9 @@ The reset rows carry no `memory` id, because they write nothing. They are also
 the reason this file cannot be run casually: they delete memories this tool
 never created.
 
-[`probe-memory-scope.sh`](probe-memory-scope.sh) is the diagnostic behind this
-design. Point it at an engine and it seeds one nonsense code, reads it back
-from the same pseudo id, a different pseudo id and no session at all, then asks
-the assistant to forget it. Run it if a recall row starts behaving oddly, or on
-an engine you have not used before: it separates "the memory was never saved"
-from "the memory was saved and not applied" in about a minute.
+Both the scoping and the deletion are product behaviours rather than documented
+guarantees, so treat them as things to re-check on an engine or a release you
+have not used before, not as facts.
 
 ## The memories
 
