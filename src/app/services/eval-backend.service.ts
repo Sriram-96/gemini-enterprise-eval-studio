@@ -42,6 +42,12 @@ export interface ScoreRequest {
 export abstract class EvalBackendService {
   abstract callAssist(request: AssistRequest): Promise<Response>;
   abstract callScore(request: ScoreRequest): Promise<Response>;
+  /**
+   * Counts the tokens in `body` with Vertex `countTokens`. Shares the
+   * `ScoreRequest` shape because it targets the same publisher model surface as
+   * `callScore`; used to derive the output-token count behind the TPOT metric.
+   */
+  abstract callCountTokens(request: ScoreRequest): Promise<Response>;
   abstract fetchEngines(projectId: string, region: string, config: AppConfig): Promise<Engine[]>;
   abstract fetchWidgetConfig(
       projectId: string,

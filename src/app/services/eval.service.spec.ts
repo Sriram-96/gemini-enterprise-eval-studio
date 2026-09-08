@@ -361,8 +361,23 @@ describe('EvalService', () => {
       const result = await service.processRow({query: 'q', golden: 'g'});
 
       expect(result.thoughts).toBe('');
-      expect(result.fetched).toContain('Error:');
+      expect(result.fetched).toBe('HTTP error 500');
+      expect(result.errorCode).toBe('HTTP 500');
     });
+
+    it('should name the HTTP reason phrase when the server sends one',
+       async () => {
+         const service = setUp();
+         mockBackendService.callAssistSpy.and.returnValue(Promise.resolve(
+             new Response('', {status: 401, statusText: 'Unauthorized'})));
+         spyOn(service['stateService'], 'getCurrentConfig')
+             .and.returnValue(CONFIG);
+
+         const result = await service.processRow({query: 'q', golden: 'g'});
+
+         expect(result.fetched).toBe('HTTP error 401 (Unauthorized)');
+         expect(result.errorCode).toBe('HTTP 401');
+       });
 
     it('should preserve the fetched text if scoring throws an error',
        async () => {
@@ -422,6 +437,69 @@ describe('EvalService', () => {
       // The primary scorer still succeeded, so its score stands.
       expect(result.score).toBe(0.25);
       expect(result.scoreError).toBe('Second: quota exceeded');
+    });
+  });
+
+  describe('computeTpot', () => {
+    /** Invokes the private TPOT helper with explicit latencies. */
+    function tpot(
+        service: EvalService, fullText: string, thoughts: string[],
+        ttftMs: number, ttltMs: number): Promise<number> {
+      return (service as unknown as {
+               computeTpot(
+                   fullText: string, thoughts: string[], ttftMs: number,
+                   ttltMs: number, config: AppConfig): Promise<number>;
+             })
+          .computeTpot(fullText, thoughts, ttftMs, ttltMs, CONFIG);
+    }
+
+    it('divides the generation interval by the tokens after the first',
+       async () => {
+         const service = setUp();
+         mockBackendService.callCountTokensSpy.and.returnValue(
+             Promise.resolve(new Response('{"totalTokens": 11}')));
+
+         // (1100 - 100) / (11 - 1) = 100 ms/token.
+         expect(await tpot(service, 'answer', ['thought'], 100, 1100))
+             .toBe(100);
+       });
+
+    it('counts the thoughts and the answer together with the auto rater model',
+       async () => {
+         const service = setUp();
+         mockBackendService.callCountTokensSpy.and.returnValue(
+             Promise.resolve(new Response('{"totalTokens": 5}')));
+
+         await tpot(service, 'the answer', ['first', 'second'], 100, 900);
+
+         const request =
+             mockBackendService.callCountTokensSpy.calls.mostRecent().args[0];
+         expect(request.model).toBe(CONFIG.autoRaterModel);
+         expect(request.body.contents[0].parts[0].text)
+             .toBe('first\nsecond\nthe answer');
+       });
+
+    it('returns 0 when one token or fewer was produced', async () => {
+      const service = setUp();
+      mockBackendService.callCountTokensSpy.and.returnValue(
+          Promise.resolve(new Response('{"totalTokens": 1}')));
+
+      expect(await tpot(service, 'answer', [], 100, 1100)).toBe(0);
+    });
+
+    it('returns 0 when there is no output text', async () => {
+      const service = setUp();
+
+      expect(await tpot(service, '', [], 100, 1100)).toBe(0);
+      expect(mockBackendService.callCountTokensSpy).not.toHaveBeenCalled();
+    });
+
+    it('returns 0 when counting tokens fails', async () => {
+      const service = setUp();
+      mockBackendService.callCountTokensSpy.and.returnValue(
+          Promise.resolve(new Response('', {status: 500})));
+
+      expect(await tpot(service, 'answer', [], 100, 1100)).toBe(0);
     });
   });
 
@@ -775,7 +853,7 @@ describe('EvalService', () => {
 
       const result = await service.processRow({query: 'q', golden: 'g'});
 
-      expect(result.fetched).toContain('Error');
+      expect(result.errorCode).toBe('HTTP 500');
       expect(result.citedSources).toBe('');
       expect(result.toolCalls).toBe('');
       expect(result.maxGroundingScore).toBe(0);

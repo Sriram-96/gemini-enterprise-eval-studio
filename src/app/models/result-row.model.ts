@@ -70,6 +70,19 @@ export interface ResultRow {
   /** Time to Last Token in seconds (s). */
   ttlt: number;
   /**
+   * Time Per Output Token in milliseconds per token (ms/token): the average
+   * time to generate each output token after the first, computed as
+   * (ttlt - ttft) / (outputTokens - 1). Note the unit differs from the
+   * seconds-based latency fields above.
+   *
+   * streamAssist returns no token count, so the output tokens are counted from
+   * the produced text (thoughts + answer) with Vertex `countTokens`. It is 0
+   * when that count is unavailable or one token or fewer was produced, so a
+   * missing value reads as an honest 0 rather than a misleading estimate.
+   * Always set, like the latency fields, so the CSV export keeps the column.
+   */
+  tpot: number;
+  /**
    * Score of the primary scorer, meaning the first one in the configured
    * selection. Always present so the results table and the Compare tab have a
    * single score to work with, however many scorers ran.
@@ -97,6 +110,15 @@ export interface ResultRow {
   agentId?: string;
   /** Error message of the first scorer that failed, if any. */
   scoreError?: string;
+  /**
+   * Structured code for a failed or skipped row: `HTTP <status>`,
+   * `RATE_LIMITED`, `SKIPPED`, or `ERROR`. Empty string on success.
+   *
+   * Always set by `EvalService.processRow` (empty, not absent) so the CSV
+   * export — whose header comes from the first row alone — always keeps the
+   * column. The clean, human-readable message lives in `fetched`.
+   */
+  errorCode?: string;
   /** Conversation grouping id from the input CSV, present only for multi-turn rows. */
   conversationId?: string;
   /** 1-based turn number within the conversation. */

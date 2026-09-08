@@ -16,6 +16,7 @@
 
 import {Injectable} from '@angular/core';
 
+import {AppConfig} from '../models/app-config.model';
 import {CSVRow} from '../models/csv-row.model';
 import {ResultRow} from '../models/result-row.model';
 import {summarizeTrace} from '../models/trace.model';
@@ -52,6 +53,33 @@ interface AssistRequestBody {
 export interface SessionContext {
   /** Session resource name to continue. Omit for the first turn or for a standalone, non-conversational query. */
   session?: string;
+}
+
+/**
+ * An error from the Assistant call that carries a structured `code`, so the
+ * failure can be surfaced as data (`ResultRow.errorCode`) rather than being
+ * flattened into a message string. `message` stays clean and human-readable for
+ * the results table.
+ */
+export class AssistError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = 'AssistError';
+  }
+}
+
+/**
+ * Reduces any caught error to the structured `{code, message}` a failed
+ * `ResultRow` records. An `AssistError` already carries both; anything else
+ * (network, stream, or parse failure) has no status to attribute, so it gets
+ * the generic `ERROR` code and its own clean message — no `Error:` prefix.
+ */
+function describeError(error: unknown): {code: string; message: string} {
+  if (error instanceof AssistError) {
+    return {code: error.code, message: error.message};
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return {code: 'ERROR', message};
 }
 
 /**
@@ -144,6 +172,7 @@ export class EvalService {
     let isFirstChunk = true;
     let isFirstUserChunk = true;
     let sessionInfo: {session?: string; turnId?: string}|undefined;
+    let skippedReason: string|undefined;
 
     try {
       onProgress?.('fetch');
@@ -159,9 +188,16 @@ export class EvalService {
           assistToken = errorData.details?.[0]?.assistToken || 'unknown';
           const reason =
               errorData.details?.[0]?.reason || 'Rate limit exceeded';
-          throw new Error(`Rate limited: ${reason}`);
+          throw new AssistError('RATE_LIMITED', `Rate limited: ${reason}`);
         }
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // The server's reason phrase (e.g. "Unauthorized") is included when it
+        // sends one; it is often empty over HTTP/2, so fall back to the status
+        // number alone rather than inventing a meaning for it.
+        const reason = response.statusText?.trim();
+        throw new AssistError(
+            `HTTP ${response.status}`,
+            reason ? `HTTP error ${response.status} (${reason})` :
+                     `HTTP error ${response.status}`);
       }
 
       const reader = response.body!.getReader();
@@ -211,6 +247,7 @@ export class EvalService {
               if (item.answer?.state === 'SKIPPED') {
                 const reason =
                     item.answer?.assistSkippedReasons?.[0] || 'Unknown reason';
+                skippedReason = reason;
                 fullText = `SKIPPED: ${reason}`;
                 break;
               }
@@ -265,6 +302,7 @@ export class EvalService {
       }
 
       const ttlt = Date.now() - startTime;
+      const tpot = await this.computeTpot(fullText, thoughts, ttft, ttlt, config);
 
       const trace = traceCollector.build();
       const expectedSources = row['expected_sources'] || '';
@@ -290,7 +328,9 @@ export class EvalService {
         ttft: Number((ttft / 1000).toFixed(2)),
         ttfa: Number((ttfa / 1000).toFixed(2)),
         ttlt: Number((ttlt / 1000).toFixed(2)),
+        tpot,
         ...summarizeScorerResults(scorerResults),
+        errorCode: skippedReason ? 'SKIPPED' : '',
         assistToken,
         projectId,
         region,
@@ -302,11 +342,13 @@ export class EvalService {
 
     } catch (error) {
       console.error('Error processing row:', error);
+      const {code, message} = describeError(error);
       const trace = traceCollector.build();
       return {
         query: row.query,
         golden: row.golden || '',
-        fetched: 'Error: ' + error,
+        fetched: message,
+        errorCode: code,
         // Whatever the model managed to think and cite before the failure is
         // still worth keeping, and the keys must exist so the columns survive
         // export.
@@ -317,6 +359,7 @@ export class EvalService {
         ttft: 0,
         ttfa: 0,
         ttlt: 0,
+        tpot: 0,
         score: 0,
         scorerId: this.scorerRegistry.resolveAll(config.selectedScorers)[0].id,
         assistToken,
@@ -327,6 +370,58 @@ export class EvalService {
         session: sessionInfo?.session,
         turnId: sessionInfo?.turnId
       };
+    }
+  }
+
+  /**
+   * Computes Time Per Output Token (TPOT) in milliseconds per token.
+   *
+   * TPOT is the average time to generate each output token after the first:
+   * `(ttlt - ttft) / (outputTokens - 1)`. streamAssist returns no token count,
+   * so the output tokens are counted from the produced text (thoughts joined
+   * with the answer) using Vertex `countTokens` on the same model the auto
+   * rater runs on, which guarantees the method is available wherever the auto
+   * rater is.
+   *
+   * Returns 0 rather than a misleading estimate whenever the count is
+   * unavailable (no output, a failed or non-OK response, or a thrown error) or
+   * when one token or fewer was produced, which would leave no interval to
+   * divide.
+   *
+   * @param fullText The answer text, excluding thoughts.
+   * @param thoughts The thinking-trace lines, if any.
+   * @param ttftMs Time to first token, in milliseconds.
+   * @param ttltMs Time to last token, in milliseconds.
+   * @param config The active configuration, for the project, region and model.
+   * @returns TPOT in ms/token, rounded to two decimals, or 0.
+   */
+  private async computeTpot(
+      fullText: string, thoughts: string[], ttftMs: number, ttltMs: number,
+      config: AppConfig): Promise<number> {
+    const outputText = [...thoughts, fullText].join('\n').trim();
+    if (!outputText) {
+      return 0;
+    }
+
+    try {
+      const response = await this.evalBackendService.callCountTokens({
+        projectId: config.projectId,
+        region: config.region,
+        model: config.autoRaterModel,
+        body: {contents: [{role: 'user', parts: [{text: outputText}]}]},
+      });
+      if (!response.ok) {
+        return 0;
+      }
+      const data = await response.json();
+      const tokens = Number(data.totalTokens) || 0;
+      if (tokens <= 1) {
+        return 0;
+      }
+      return Number(((ttltMs - ttftMs) / (tokens - 1)).toFixed(2));
+    } catch (e) {
+      console.error('Error counting output tokens for TPOT:', e);
+      return 0;
     }
   }
 

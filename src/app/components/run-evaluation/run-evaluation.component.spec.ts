@@ -115,6 +115,7 @@ describe('RunEvaluationComponent', () => {
         ttft: 10,
         ttfa: 20,
         ttlt: 30,
+        tpot: 0,
         score: 0.9
       };
     });
@@ -151,6 +152,7 @@ describe('RunEvaluationComponent', () => {
         ttft: 10,
         ttfa: 20,
         ttlt: 30,
+        tpot: 0,
         score: 0.9
       };
     });
@@ -179,6 +181,7 @@ describe('RunEvaluationComponent', () => {
            ttft: 10,
            ttfa: 20,
            ttlt: 30,
+           tpot: 0,
            score: 0.9
          };
        });
@@ -219,6 +222,7 @@ describe('RunEvaluationComponent', () => {
            ttft: 10,
            ttfa: 20,
            ttlt: 30,
+           tpot: 0,
            score: 0.9
          };
        });
@@ -236,6 +240,7 @@ describe('RunEvaluationComponent', () => {
          ttft: 10,
          ttfa: 20,
          ttlt: 30,
+         tpot: 0,
          score: 0.9
        });
 
@@ -259,6 +264,7 @@ describe('RunEvaluationComponent', () => {
         ttft: 10,
         ttfa: 20,
         ttlt: 30,
+        tpot: 0,
         score: 0.9
       };
     });
@@ -294,6 +300,7 @@ describe('RunEvaluationComponent', () => {
                ttft: 10,
                ttfa: 20,
                ttlt: 30,
+               tpot: 0,
                score: 0.9,
                session: `session-after-${row.query}`,
              };
@@ -349,6 +356,7 @@ describe('RunEvaluationComponent', () => {
                ttft: 10,
                ttfa: 20,
                ttlt: 30,
+               tpot: 0,
                score: 0.9,
                session: `session-after-${row.query}`,
              };
@@ -519,6 +527,7 @@ describe('RunEvaluationComponent', () => {
         ttft: 1,
         ttfa: 2,
         ttlt: 3,
+        tpot: 0,
         score: scorerResults[0]?.score ?? 0,
         scorerId: scorerResults[0]?.scorerId,
         scorerResults
@@ -623,6 +632,7 @@ describe('RunEvaluationComponent', () => {
                                                    ttft: 10,
                                                    ttfa: 20,
                                                    ttlt: 30,
+                                                   tpot: 0,
                                                    score: 0.25,
                                                    scorerId: 'first',
                                                    scorerResults: [
@@ -676,9 +686,11 @@ describe('RunEvaluationComponent', () => {
 
          resultsSubject.next([
            {query: 'q1', golden: 'g1', fetched: 'f1', ttft: 1, ttfa: 2, ttlt: 3,
-            score: 0.1},
+           tpot: 0,
+           score: 0.1},
            {query: 'q2', golden: 'g2', fetched: 'f2', ttft: 1, ttfa: 2, ttlt: 3,
-            score: 0.2},
+           tpot: 0,
+           score: 0.2},
          ]);
          mockEvalService.scoreAll.and.callFake(async () => [
            {scorerId: 'first', displayName: 'First', score: 0.9},
@@ -704,9 +716,11 @@ describe('RunEvaluationComponent', () => {
 
          resultsSubject.next([
            {query: 'q1', golden: 'g1', fetched: 'f1', ttft: 1, ttfa: 2, ttlt: 3,
-            score: 0.1},
+           tpot: 0,
+           score: 0.1},
            {query: 'q2', golden: 'g2', fetched: 'f2', ttft: 1, ttfa: 2, ttlt: 3,
-            score: 0.2},
+           tpot: 0,
+           score: 0.2},
          ]);
          mockEvalService.scoreAll.and.callFake(async () => [{
            scorerId: 'first',
@@ -730,6 +744,7 @@ describe('RunEvaluationComponent', () => {
 
          resultsSubject.next([{
            query: 'q1', golden: 'g1', fetched: '', ttft: 0, ttfa: 0, ttlt: 0,
+           tpot: 0,
            score: 0
          }]);
 

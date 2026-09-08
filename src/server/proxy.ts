@@ -135,6 +135,46 @@ export function createProxyRouter(config: Config, refreshTokenStore?: RefreshTok
     }
   });
 
+  // 2b. POST /api/v1/count-tokens (Vertex AI countTokens proxy)
+  router.post('/api/v1/count-tokens', async (req: Request, res: Response) => {
+    const {projectId, region, model, body} = req.body as {
+      projectId: string;
+      region: string;
+      model: string;
+      body: any;
+    };
+
+    if (!projectId) {
+      res.status(400).send('Missing projectId parameter.');
+      return;
+    }
+
+    if (!region || !REGION_REGEX.test(region)) {
+      res.status(400).send('Invalid or missing region parameter.');
+      return;
+    }
+
+    if (!model) {
+      res.status(400).send('Missing model parameter.');
+      return;
+    }
+
+    try {
+      const auth = new google.auth.OAuth2();
+      auth.setCredentials({ access_token: req.session?.token.access_token || '' });
+
+      const aiplatform = google.aiplatform({ version: 'v1', auth });
+      const response = await aiplatform.projects.locations.publishers.models.countTokens({
+        endpoint: `projects/${projectId}/locations/${region}/publishers/google/models/${model}`,
+        requestBody: body,
+      });
+
+      res.json(response.data);
+    } catch (err: any) {
+      res.status(err.response?.status || 500).send(`Proxy request failed: ${err.message}`);
+    }
+  });
+
   // 3. GET /api/v1/engines (Discovery Engine list engines proxy)
   router.get('/api/v1/engines', async (req: Request, res: Response) => {
     const projectId = req.query['projectId'] as string;

@@ -53,7 +53,8 @@ export class RunQueriesComponent {
     {header: 'Agent', key: 'agentId', truncate: true},
     {header: 'TTFT (s)', key: 'ttft', type: 'number'},
     {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
-    {header: 'TTLT (s)', key: 'ttlt', type: 'number'}
+    {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
+    {header: 'TPOT (ms/token)', key: 'tpot', type: 'number'}
   ];
   errorMessage: string|null = null;
   responseFile: File|null = null;
@@ -151,10 +152,12 @@ export class RunQueriesComponent {
         ...this.responseResults, {
           query: result.query,
           response: result.fetched,
+          errorCode: result.errorCode,
           ttft: result.ttft,
           ttfa: result.ttfa,
           ttlt: result.ttlt,
           agentId: result.agentId,
+          tpot: result.tpot,
           assistToken: result.assistToken,
           projectId: result.projectId,
           region: result.region,

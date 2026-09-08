@@ -50,6 +50,7 @@ const BASE_COLUMNS: readonly ColumnDef[] = [
   {header: 'TTFT (s)', key: 'ttft', type: 'number'},
   {header: 'TTFA (s)', key: 'ttfa', type: 'number'},
   {header: 'TTLT (s)', key: 'ttlt', type: 'number'},
+  {header: 'TPOT (ms/token)', key: 'tpot', type: 'number'},
 ];
 
 /** The column shown when a single scorer ran. */

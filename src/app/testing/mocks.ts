@@ -43,6 +43,7 @@ import {WidgetConfigResponse} from '../models/app-config.model';
 export class MockEvalBackendService extends EvalBackendService {
   callAssistSpy = jasmine.createSpy('callAssist').and.returnValue(Promise.resolve(new Response('[]')));
   callScoreSpy = jasmine.createSpy('callScore').and.returnValue(Promise.resolve(new Response('{}')));
+  callCountTokensSpy = jasmine.createSpy('callCountTokens').and.returnValue(Promise.resolve(new Response('{"totalTokens": 0}')));
   fetchEnginesSpy = jasmine.createSpy('fetchEngines').and.returnValue(Promise.resolve([]));
   fetchWidgetConfigSpy = jasmine.createSpy('fetchWidgetConfig').and.returnValue(Promise.resolve(null));
 
@@ -53,6 +54,10 @@ export class MockEvalBackendService extends EvalBackendService {
 
   override callScore(request: ScoreRequest): Promise<Response> {
     return this.callScoreSpy(request);
+  }
+
+  override callCountTokens(request: ScoreRequest): Promise<Response> {
+    return this.callCountTokensSpy(request);
   }
 
   override fetchEngines(projectId: string, region: string, config: any): Promise<Engine[]> {
