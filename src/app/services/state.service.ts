@@ -99,9 +99,18 @@ export class StateService {
       this.configSubject.asObservable().pipe(map(c => structuredClone(c)));
 
   private resultsSubject = new BehaviorSubject<ResultRow[]>([]);
-  /** Observable of the evaluation results. */
-  results$ =
-      this.resultsSubject.asObservable().pipe(map(r => structuredClone(r)));
+  /**
+   * Observable of the evaluation results.
+   *
+   * The array is copied so a subscriber cannot splice rows into the stored
+   * run, but the rows themselves are shared rather than deep-cloned: a run
+   * emits once per finished row, so deep-copying every row collected so far
+   * on each emission made a long queryset quadratic -- a thousand-row file
+   * spent minutes cloning instead of evaluating. Rows are written once and
+   * replaced wholesale when re-rated, never mutated in place, so sharing them
+   * is safe.
+   */
+  results$ = this.resultsSubject.asObservable().pipe(map(r => [...r]));
 
   private enginesSubject = new BehaviorSubject<Engine[]>([]);
   /** Observable of the fetched engines. */
@@ -149,6 +158,19 @@ export class StateService {
   /** Sets the evaluation results. */
   setResults(results: ResultRow[]) {
     this.resultsSubject.next(structuredClone(results));
+  }
+
+  /**
+   * Appends one finished row to the evaluation results.
+   *
+   * A run calls this every time a row lands, so only the new row is cloned:
+   * handing the whole accumulated array back through `setResults` copied every
+   * earlier row again, which is what kept large querysets from finishing.
+   * @param result The row to append.
+   */
+  appendResult(result: ResultRow) {
+    this.resultsSubject.next(
+        [...this.resultsSubject.value, structuredClone(result)]);
   }
 
   setErrorMessage(errorMessage: string) {

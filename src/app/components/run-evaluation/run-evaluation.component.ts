@@ -346,7 +346,6 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
     this.step = 3;
     this.stateService.setResults([]);
     this.cdr.detectChanges();
-    const results: ResultRow[] = [];
 
     if (this.totalRows === 0) return;
 
@@ -368,14 +367,13 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
         }
 
         const memoryPhase = memoryPhaseOf(row);
-        results.push({
+        this.stateService.appendResult({
           ...result,
           conversationId: isMultiTurn ? row.conversation_id : undefined,
           turn: isMultiTurn ? (Number(row.turn) || i + 1) : undefined,
           memoryPhase,
           memorySupport: memoryPhase ? memorySupport : undefined,
         });
-        this.stateService.setResults(results);
         this.completedRows++;
         this.progress =
             Math.round((this.completedRows / this.totalRows) * 100);
