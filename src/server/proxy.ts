@@ -22,6 +22,32 @@ import {RefreshTokenStore} from './store';
 
 const ENGINE_PATH_REGEX = /^projects\/([^/]+)\/locations\/([^/]+)\/collections\/([^/]+)\/engines\/([^/]+)$/;
 const REGION_REGEX = /^[a-z0-9-]+$/;
+const ENGINE_ID_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
+const PROJECT_ID_REGEX = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
+
+/** Largest page ListAgents accepts; see the frontend counterpart. */
+const MAX_AGENT_PAGE_SIZE = 1000;
+
+/**
+ * Expands an `engineId` query parameter into a full engine resource name.
+ *
+ * The client sends either a full `projects/.../engines/{id}` path or a bare
+ * engine id. Both are validated rather than merely normalized, because the
+ * result is interpolated into a request URL: an unvetted value could reach a
+ * different resource than the one named.
+ * @returns The engine resource name, or null when the input is not a valid
+ *     engine reference.
+ */
+export function resolveEnginePath(
+    projectId: string, region: string, engineId: string): string|null {
+  if (engineId.startsWith('projects/')) {
+    return ENGINE_PATH_REGEX.test(engineId) ? engineId : null;
+  }
+  if (!ENGINE_ID_REGEX.test(engineId)) {
+    return null;
+  }
+  return `projects/${projectId}/locations/${region}/collections/default_collection/engines/${engineId}`;
+}
 
 /**
  * Creates the Express router for proxying requests to Discovery Engine and Vertex AI.
@@ -252,6 +278,62 @@ export function createProxyRouter(config: Config, refreshTokenStore?: RefreshTok
       res.json(response.data);
     } catch (err: any) {
       res.status(err.response?.status || 500).send(`Proxy request failed: ${err.message}`);
+    }
+  });
+
+  // 5. GET /api/v1/agents (Discovery Engine list agents proxy)
+  //
+  // Uses a raw fetch rather than the generated `googleapis` client: the pinned
+  // client does not yet expose the `engines.assistants.agents` resource.
+  router.get('/api/v1/agents', async (req: Request, res: Response) => {
+    const projectId = req.query['projectId'] as string;
+    const region = req.query['region'] as string;
+    const engineId = req.query['engineId'] as string;
+
+    if (!projectId || !PROJECT_ID_REGEX.test(projectId)) {
+      res.status(400).send('Invalid or missing projectId parameter.');
+      return;
+    }
+
+    if (!region || !REGION_REGEX.test(region)) {
+      res.status(400).send('Invalid or missing region parameter.');
+      return;
+    }
+
+    if (!engineId) {
+      res.status(400).send('Missing engineId parameter.');
+      return;
+    }
+
+    const enginePath = resolveEnginePath(projectId, region, engineId);
+    if (!enginePath) {
+      res.status(400).send('Invalid engineId parameter.');
+      return;
+    }
+
+    const baseUrl = region === 'global'
+      ? 'discoveryengine.googleapis.com'
+      : `${region}-discoveryengine.googleapis.com`;
+    const url = `https://${baseUrl}/v1alpha/${enginePath}/assistants/default_assistant/agents?pageSize=${MAX_AGENT_PAGE_SIZE}`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${req.session?.token.access_token}`,
+          'x-goog-user-project': projectId,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        res.status(response.status).send(errorText);
+        return;
+      }
+
+      res.json(await response.json());
+    } catch (err) {
+      res.status(500).send(`Proxy request failed: ${(err as Error).message}`);
     }
   });
 

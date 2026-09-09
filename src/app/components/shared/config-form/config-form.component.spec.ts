@@ -787,6 +787,211 @@ describe('ConfigFormComponent', () => {
     });
   });
 
+  describe('fetchAgentsForSelectedEngine', () => {
+    const ENGINE = 'engine1';
+    const AGENT_PATH =
+        'projects/project/locations/global/collections/default_collection/engines/engine1/assistants/default_assistant/agents/support-bot';
+    const OTHER_AGENT_PATH = AGENT_PATH.replace('support-bot', 'triage-bot');
+
+    beforeEach(() => {
+      component.config.projectId = 'project';
+      component.config.region = 'global';
+      component.config.selectedEngine = ENGINE;
+    });
+
+    it('should populate the picker from the agents published under the engine',
+       fakeAsync(() => {
+         mockEvalBackendService.fetchAgentsSpy.and.returnValue(Promise.resolve([
+           {name: AGENT_PATH, displayName: 'Support Bot', state: 'ENABLED'},
+           {name: OTHER_AGENT_PATH, displayName: 'Triage Bot', state: 'PRIVATE'},
+         ]));
+
+         component.fetchAgentsForSelectedEngine();
+         tick();
+
+         expect(mockEvalBackendService.fetchAgentsSpy)
+             .toHaveBeenCalledWith('project', 'global', ENGINE, component.config);
+         expect(component.agents.map(a => a.displayName)).toEqual([
+           'Support Bot', 'Triage Bot'
+         ]);
+         expect(component.agentsLoading).toBeFalse();
+         expect(component.agentsErrorMessage).toBe('');
+       }));
+
+    it('should hide agents that cannot serve a query', fakeAsync(() => {
+      mockEvalBackendService.fetchAgentsSpy.and.returnValue(Promise.resolve([
+        {name: AGENT_PATH, displayName: 'Support Bot', state: 'ENABLED'},
+        {name: OTHER_AGENT_PATH, displayName: 'Half-built', state: 'DEPLOYING'},
+      ]));
+
+      component.fetchAgentsForSelectedEngine();
+      tick();
+
+      expect(component.agents.map(a => a.displayName)).toEqual(['Support Bot']);
+    }));
+
+    it('should not call the backend before an engine is selected', () => {
+      component.config.selectedEngine = '';
+      component.agents = [{name: AGENT_PATH, displayName: 'Stale'}];
+      component.agentsLoading = true;
+
+      component.fetchAgentsForSelectedEngine();
+
+      expect(mockEvalBackendService.fetchAgentsSpy).not.toHaveBeenCalled();
+      expect(component.agents).toEqual([]);
+      // A lookup for the previous engine will be discarded on arrival, so it
+      // would otherwise leave the picker spinning forever.
+      expect(component.agentsLoading).toBeFalse();
+    });
+
+    it('should report a failed lookup beside the picker, leaving the run usable',
+       fakeAsync(() => {
+         mockEvalBackendService.fetchAgentsSpy.and.returnValue(
+             Promise.reject(new HttpErrorResponse(
+                 {status: 403, error: {error: {message: 'Permission denied'}}})));
+
+         component.fetchAgentsForSelectedEngine();
+         tick();
+
+         expect(component.agents).toEqual([]);
+         expect(component.agentsErrorMessage)
+             .toBe('Could not list agents: Permission denied');
+         // The engine-level error is untouched: the engine is still evaluable.
+         expect(component.errorMessage).toBe('');
+         expect(component.agentsLoading).toBeFalse();
+       }));
+
+    it('should drop a selected agent the refreshed list no longer offers',
+       fakeAsync(() => {
+         component.config.selectedAgent = AGENT_PATH;
+         mockEvalBackendService.fetchAgentsSpy.and.returnValue(Promise.resolve([
+           {name: OTHER_AGENT_PATH, displayName: 'Triage Bot', state: 'ENABLED'},
+         ]));
+
+         component.fetchAgentsForSelectedEngine();
+         tick();
+
+         expect(component.config.selectedAgent).toBe('');
+         expect(mockStateService.setConfig).toHaveBeenCalled();
+       }));
+
+    it('should keep a selected agent that is still offered', fakeAsync(() => {
+      component.config.selectedAgent = AGENT_PATH;
+      mockEvalBackendService.fetchAgentsSpy.and.returnValue(Promise.resolve([
+        {name: AGENT_PATH, displayName: 'Support Bot', state: 'ENABLED'},
+      ]));
+
+      component.fetchAgentsForSelectedEngine();
+      tick();
+
+      expect(component.config.selectedAgent).toBe(AGENT_PATH);
+      expect(component.getSelectedAgent()?.displayName).toBe('Support Bot');
+    }));
+
+    it('should ignore a response that arrives after the engine changed',
+       fakeAsync(() => {
+         let resolveFirst!: (agents: unknown[]) => void;
+         mockEvalBackendService.fetchAgentsSpy.and.returnValue(
+             new Promise(resolve => {
+               resolveFirst = resolve as (agents: unknown[]) => void;
+             }));
+
+         component.fetchAgentsForSelectedEngine();
+         // The user switches engines while the first lookup is in flight.
+         component.config.selectedEngine = 'engine2';
+         component.agents =
+             [{name: OTHER_AGENT_PATH, displayName: 'Engine 2 Agent'}];
+         resolveFirst([{name: AGENT_PATH, displayName: 'Engine 1 Agent'}]);
+         tick();
+
+         expect(component.agents.map(a => a.displayName)).toEqual([
+           'Engine 2 Agent'
+         ]);
+       }));
+
+    it('should clear the previous engine\'s agents and selection on engine change',
+       () => {
+         component.engines = [{name: ENGINE, displayName: 'Engine 1'}];
+         component.agents =
+             [{name: AGENT_PATH, displayName: 'Support Bot', state: 'ENABLED'}];
+         component.config.selectedAgent = AGENT_PATH;
+         spyOn(component, 'fetchAgentsForSelectedEngine');
+
+         component.onEngineChange();
+
+         expect(component.agents).toEqual([]);
+         expect(component.config.selectedAgent).toBe('');
+         expect(component.fetchAgentsForSelectedEngine).toHaveBeenCalled();
+       });
+  });
+
+  describe('agent picker rendering', () => {
+    const AGENT_PATH =
+        'projects/project/locations/global/collections/default_collection/engines/engine1/assistants/default_assistant/agents/support-bot';
+
+    /** Renders the form with an engine chosen and the given agents available. */
+    function renderWithAgents(agents: unknown[]): HTMLSelectElement {
+      mockEvalBackendService.fetchEnginesSpy.and.returnValue(
+          Promise.resolve([{name: 'engine1', displayName: 'Engine 1'}]));
+      mockEvalBackendService.fetchAgentsSpy.and.returnValue(
+          Promise.resolve(agents));
+
+      component.config.projectId = 'project';
+      component.fetchEngines();
+      tick();
+      fixture.detectChanges();
+
+      return fixture.nativeElement.querySelector(
+          'select[aria-label="Agent"]') as HTMLSelectElement;
+    }
+
+    it('should list the fetched agents alongside the default assistant',
+       fakeAsync(() => {
+         const select = renderWithAgents([
+           {name: AGENT_PATH, displayName: 'Support Bot', state: 'ENABLED'},
+         ]);
+
+         expect(select).toBeTruthy();
+         expect(select.disabled).toBeFalse();
+         const labels = Array.from(select.options).map(o => o.textContent!.trim());
+         expect(labels).toEqual(['Default assistant (no agent)', 'Support Bot']);
+       }));
+
+    it('should default to the assistant so an unattended run is unchanged',
+       fakeAsync(() => {
+         const select = renderWithAgents([
+           {name: AGENT_PATH, displayName: 'Support Bot', state: 'ENABLED'},
+         ]);
+
+         expect(select.value).toBe('');
+         expect(component.config.selectedAgent).toBe('');
+       }));
+
+    it('should push the picked agent into the shared config', fakeAsync(() => {
+      const select = renderWithAgents([
+        {name: AGENT_PATH, displayName: 'Support Bot', state: 'ENABLED'},
+      ]);
+
+      select.value = AGENT_PATH;
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(component.config.selectedAgent).toBe(AGENT_PATH);
+      expect(mockStateService.setConfig)
+          .toHaveBeenCalledWith(
+              jasmine.objectContaining({selectedAgent: AGENT_PATH}));
+    }));
+
+    it('should disable the picker and say so when the engine has no agents',
+       fakeAsync(() => {
+         const select = renderWithAgents([]);
+
+         expect(select.disabled).toBeTrue();
+         expect((fixture.nativeElement as HTMLElement).textContent)
+             .toContain('No agents published under this engine.');
+       }));
+  });
+
   describe('changeConfigAndResetEngines', () => {
     it('should reset engines and clear selectedEngine / selectedModel when token, project ID, or region changes',
        () => {
@@ -796,12 +1001,14 @@ describe('ConfigFormComponent', () => {
          // State where engines have been fetched
          component.engines =
              [{name: 'engine-1', displayName: 'Engine 1', modelConfigs: {}}];
+         component.agents = [{name: 'agents/agent-1', displayName: 'Agent 1'}];
          component.config = {
            gCloudToken: 'token-1',
            projectId: 'project-1',
            region: 'global',
            selectedEngine: 'engine-1',
            selectedModel: 'model-1',
+           selectedAgent: 'agents/agent-1',
            autoRaterModel: 'auto',
            autoRaterInstruction: 'instruction',
            selectedDataStores: [],
@@ -815,8 +1022,10 @@ describe('ConfigFormComponent', () => {
          component.changeConfigAndResetEngines();
 
          expect(component.engines).toEqual([]);
+         expect(component.agents).toEqual([]);
          expect(component.config.selectedEngine).toBe('');
          expect(component.config.selectedModel).toBe('');
+         expect(component.config.selectedAgent).toBe('');
          expect(component.config.gCloudToken).toBe('token-2');
          expect(component.config.projectId).toBe('project-2');
          expect(component.config.region).toBe('us');

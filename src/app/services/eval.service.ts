@@ -16,6 +16,7 @@
 
 import {Injectable} from '@angular/core';
 
+import {agentIdFromResourceName} from '../models/agent.model';
 import {AppConfig} from '../models/app-config.model';
 import {CSVRow} from '../models/csv-row.model';
 import {ResultRow} from '../models/result-row.model';
@@ -39,6 +40,14 @@ interface AssistRequestBody {
       dataStoreSpecs?: Array<{dataStore: string}>;
     };
     webGroundingSpec?: {};
+  };
+  /**
+   * Routes the query to a specific agent. Omitted entirely when the run is
+   * against the engine's default assistant, since an empty spec is not the same
+   * request as no spec at all.
+   */
+  agentsSpec?: {
+    agentSpecs: Array<{agentId: string}>;
   };
 }
 
@@ -145,6 +154,13 @@ export class EvalService {
 
     if (config.selectedModel !== 'auto') {
       body.generationSpec = {modelId: config.selectedModel};
+    }
+
+    // `agentsSpec` takes the bare agent id, not the resource name the picker
+    // stores.
+    const agentId = agentIdFromResourceName(config.selectedAgent);
+    if (agentId) {
+      body.agentsSpec = {agentSpecs: [{agentId}]};
     }
 
     const projectId = config.projectId;
@@ -332,6 +348,7 @@ export class EvalService {
         projectId,
         region,
         engineId,
+        agentId,
         session: sessionInfo?.session,
         turnId: sessionInfo?.turnId,
         dataStoresUsed: eff.dataStoresLabel
@@ -363,6 +380,7 @@ export class EvalService {
         projectId,
         region,
         engineId,
+        agentId,
         session: sessionInfo?.session,
         turnId: sessionInfo?.turnId,
         dataStoresUsed: eff.dataStoresLabel

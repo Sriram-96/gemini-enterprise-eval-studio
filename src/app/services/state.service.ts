@@ -56,6 +56,7 @@ export class StateService {
       region: 'global',
       selectedEngine: '',
       selectedModel: '',
+      selectedAgent: '',
       autoRaterModel: '',
       autoRaterInstruction:
           'You are an expert evaluator. Compare the fetched response to the golden response for the given query. Calculate a semantic similarity score between 0.0 and 1.0...',
@@ -78,8 +79,8 @@ export class StateService {
       }
     }
 
-    const {gCloudToken, selectedEngine, selectedModel, ...safeConfig} =
-        savedConfig;
+    const {gCloudToken, selectedEngine, selectedModel, selectedAgent,
+           ...safeConfig} = savedConfig;
 
     return {
       ...defaultConfig,
@@ -87,6 +88,7 @@ export class StateService {
       gCloudToken: '',
       selectedEngine: '',
       selectedModel: '',
+      selectedAgent: '',
     };
   }
 
@@ -130,8 +132,11 @@ export class StateService {
     const clonedConfig = structuredClone(config);
     this.configSubject.next(clonedConfig);
 
-    const {gCloudToken, selectedEngine, selectedModel, ...localConfig} =
-        clonedConfig;
+    // The engine-scoped choices are deliberately not persisted: restoring an
+    // agent that belongs to an engine the user has not re-selected would point
+    // the next run at something they never chose.
+    const {gCloudToken, selectedEngine, selectedModel, selectedAgent,
+           ...localConfig} = clonedConfig;
 
     this.storageWrite$.next(localConfig);
   }

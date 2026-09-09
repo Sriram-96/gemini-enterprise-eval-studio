@@ -18,6 +18,7 @@ import {HttpClient} from '@angular/common/http';
 import {Injectable} from '@angular/core';
 import {firstValueFrom} from 'rxjs';
 
+import {Agent, ListAgentsResponse} from '../models/agent.model';
 import {AppConfig, Engine, WidgetConfigResponse} from '../models/app-config.model';
 import {AssistRequest, EvalBackendService, ScoreRequest} from './eval-backend.service';
 
@@ -89,6 +90,19 @@ export class ProxyEvalBackendService extends EvalBackendService {
       console.error('Error fetching widget config:', err);
       return null;
     }
+  }
+
+  override async fetchAgents(
+      projectId: string,
+      region: string,
+      engineId: string,
+      config: AppConfig
+  ): Promise<Agent[]> {
+    const url = `/api/v1/agents?projectId=${projectId}&region=${region}&engineId=${encodeURIComponent(engineId)}`;
+    const res = await firstValueFrom(
+        this.http.get<ListAgentsResponse>(url)
+    );
+    return res?.agents || [];
   }
 }
 

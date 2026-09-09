@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import {Agent} from '../models/agent.model';
 import {AppConfig, Engine, WidgetConfigResponse} from '../models/app-config.model';
 
 /**
@@ -55,5 +56,17 @@ export abstract class EvalBackendService {
       engineId: string,
       config: AppConfig
   ): Promise<WidgetConfigResponse | null>;
+  /**
+   * Lists the agents published under the engine's default assistant, so the
+   * run can be pointed at one of them. Rejects on failure; the caller decides
+   * whether an engine with no readable agents is an error or simply an engine
+   * without agents.
+   */
+  abstract fetchAgents(
+      projectId: string,
+      region: string,
+      engineId: string,
+      config: AppConfig
+  ): Promise<Agent[]>;
 }
 

@@ -33,6 +33,9 @@ violate data privacy policies.
     the data stores and connectors they came from, the tools it ran and its
     thinking, so a tester can confirm *how* an answer was reached and not only
     that it sounded plausible. See [Verifying Retrieval](#verifying-retrieval).
+-   **Agent Selection**: The agents published under the chosen engine are listed
+    automatically, so a run can be pointed at one of them instead of the
+    engine's default assistant. See [Choosing an Agent](#choosing-an-agent).
 -   **Saved Memory Evaluation**: An optional `phase` column clears the account's
     memories, seeds new ones in one set of rows and reads them back from fresh
     sessions in another, so personalization can be tested rather than assumed —
@@ -133,6 +136,34 @@ Then start the server in either **Auth Mode** (full stack) or **No-Auth Mode** (
   npm run start:no-auth
   ```
   By default, the frontend listens on port 4200.
+
+## Choosing an Agent
+
+An engine can publish agents on top of its default assistant, and each one
+answers the same question differently — different instructions, different
+tools, sometimes a different corpus. Evaluating "the engine" therefore says
+little about what your users actually talk to.
+
+Selecting an engine populates the **Agent** dropdown with the agents published
+under it, read from that engine's default assistant. Pick one and every query
+in the run is routed to it; leave the dropdown on **Default assistant (no
+agent)** and the run behaves exactly as it did before this option existed. The
+selection is not remembered between sessions, because an agent belongs to one
+engine and restoring it under another would silently evaluate something you did
+not choose.
+
+The list only offers agents that can answer: agents still deploying, agents
+whose build failed, and suspended agents are left out rather than shown as
+options that would fail every row. Agents that are private to you or restricted
+to admins *are* offered — they are visible to you, which is what matters.
+
+Listing agents needs read access to the engine's assistant, which running
+queries does not. If that call fails the studio says so beside the dropdown and
+leaves the run on the default assistant, rather than blocking an evaluation
+that would have worked.
+
+Each result row records the `agentId` that served it alongside its `engineId`,
+so an exported CSV shows which agent produced which score.
 
 ## Verifying Retrieval
 

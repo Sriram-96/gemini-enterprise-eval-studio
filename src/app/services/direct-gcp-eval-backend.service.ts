@@ -16,9 +16,19 @@
 
 import {Injectable} from '@angular/core';
 
+import {Agent, ListAgentsResponse} from '../models/agent.model';
 import {AppConfig, Engine, WidgetConfigResponse} from '../models/app-config.model';
 import {AssistRequest, EvalBackendService, ScoreRequest} from './eval-backend.service';
 import {StateService} from './state.service';
+
+/**
+ * Largest page ListAgents accepts. Requested in one shot rather than paged
+ * through: a picker holding more than a thousand agents is not usable anyway.
+ */
+const MAX_AGENT_PAGE_SIZE = 1000;
+
+/** The assistant every engine exposes, and the one the studio queries. */
+const DEFAULT_ASSISTANT_ID = 'default_assistant';
 
 /**
  * Direct GCP implementation of EvalBackendService.
@@ -33,11 +43,8 @@ export class DirectGcpEvalBackendService extends EvalBackendService {
 
   override async callAssist(request: AssistRequest): Promise<Response> {
     const {selectedEngine, region, body} = request;
-    const baseUrl = region === 'global'
-      ? 'discoveryengine.googleapis.com'
-      : `${region}-discoveryengine.googleapis.com`;
-
-    const url = `https://${baseUrl}/v1/${selectedEngine}/assistants/default_assistant:streamAssist`;
+    const url = `https://${this.baseUrl(region)}/v1/${selectedEngine}/assistants/${
+        DEFAULT_ASSISTANT_ID}:streamAssist`;
 
     return fetch(url, {
       method: 'POST',
@@ -80,11 +87,7 @@ export class DirectGcpEvalBackendService extends EvalBackendService {
   }
 
   override async fetchEngines(projectId: string, region: string, config: AppConfig): Promise<Engine[]> {
-    const baseUrl = region === 'global'
-      ? 'discoveryengine.googleapis.com'
-      : `${region}-discoveryengine.googleapis.com`;
-
-    const url = `https://${baseUrl}/v1alpha/projects/${projectId}/locations/${region}/collections/default_collection/engines`;
+    const url = `https://${this.baseUrl(region)}/v1alpha/projects/${projectId}/locations/${region}/collections/default_collection/engines`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -112,14 +115,8 @@ export class DirectGcpEvalBackendService extends EvalBackendService {
     if (!config.gCloudToken || !projectId || !engineId) {
       return null;
     }
-    const baseUrl = region === 'global'
-      ? 'discoveryengine.googleapis.com'
-      : `${region}-discoveryengine.googleapis.com`;
-
-    const enginePath = engineId.startsWith('projects/')
-      ? engineId
-      : `projects/${projectId}/locations/${region}/collections/default_collection/engines/${engineId}`;
-    const url = `https://${baseUrl}/v1alpha/${enginePath}/widgetConfigs/default_search_widget_config`;
+    const url = `https://${this.baseUrl(region)}/v1alpha/${
+        this.enginePath(projectId, region, engineId)}/widgetConfigs/default_search_widget_config`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -134,6 +131,50 @@ export class DirectGcpEvalBackendService extends EvalBackendService {
     }
 
     return await response.json() as WidgetConfigResponse;
+  }
+
+  override async fetchAgents(
+      projectId: string,
+      region: string,
+      engineId: string,
+      config: AppConfig
+  ): Promise<Agent[]> {
+    if (!projectId || !engineId) {
+      return [];
+    }
+    // Listing agents is only exposed on v1alpha, the same surface the engine
+    // and widget-config lookups already use.
+    const url = `https://${this.baseUrl(region)}/v1alpha/${
+        this.enginePath(projectId, region, engineId)}/assistants/${
+        DEFAULT_ASSISTANT_ID}/agents?pageSize=${MAX_AGENT_PAGE_SIZE}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${config.gCloudToken}`,
+        'x-goog-user-project': projectId
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch agents: ${errorText}`);
+    }
+
+    const data = await response.json() as ListAgentsResponse;
+    return data.agents || [];
+  }
+
+  private baseUrl(region: string): string {
+    return region === 'global'
+      ? 'discoveryengine.googleapis.com'
+      : `${region}-discoveryengine.googleapis.com`;
+  }
+
+  private enginePath(projectId: string, region: string, engineId: string): string {
+    return engineId.startsWith('projects/')
+      ? engineId
+      : `projects/${projectId}/locations/${region}/collections/default_collection/engines/${engineId}`;
   }
 
   private getGCloudToken(): string {

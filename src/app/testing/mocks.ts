@@ -15,6 +15,7 @@
  */
 
 import { BehaviorSubject } from 'rxjs';
+import { Agent } from '../models/agent.model';
 import { Engine } from '../models/app-config.model';
 import { AuthProvider, AuthService } from '../services/auth.service';
 import { AssistRequest, EvalBackendService, ScoreRequest } from '../services/eval-backend.service';
@@ -46,6 +47,7 @@ export class MockEvalBackendService extends EvalBackendService {
   callCountTokensSpy = jasmine.createSpy('callCountTokens').and.returnValue(Promise.resolve(new Response('{"totalTokens": 0}')));
   fetchEnginesSpy = jasmine.createSpy('fetchEngines').and.returnValue(Promise.resolve([]));
   fetchWidgetConfigSpy = jasmine.createSpy('fetchWidgetConfig').and.returnValue(Promise.resolve(null));
+  fetchAgentsSpy = jasmine.createSpy('fetchAgents').and.returnValue(Promise.resolve([]));
 
 
   override callAssist(request: AssistRequest): Promise<Response> {
@@ -66,6 +68,10 @@ export class MockEvalBackendService extends EvalBackendService {
 
   override fetchWidgetConfig(projectId: string, region: string, engineId: string, config: any): Promise<WidgetConfigResponse | null> {
     return this.fetchWidgetConfigSpy(projectId, region, engineId, config);
+  }
+
+  override fetchAgents(projectId: string, region: string, engineId: string, config: any): Promise<Agent[]> {
+    return this.fetchAgentsSpy(projectId, region, engineId, config);
   }
 
 
