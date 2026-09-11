@@ -131,6 +131,21 @@ export class CsvTableComponent implements OnChanges {
   }
 
   /**
+   * Tracks table rows by position.
+   *
+   * A running evaluation hands this table a freshly built array after every
+   * finished row. Without a track function each of those updates throws away
+   * and re-creates every `<tr>`, which on a long queryset costs more than the
+   * evaluation itself; by position the existing rows are updated in place and
+   * only the new one is added.
+   * @param index The row's position in the table.
+   * @returns The identity to track the row by.
+   */
+  trackByIndex(index: number): number {
+    return index;
+  }
+
+  /**
    * Truncates text to a specified limit.
    * @param text The text to truncate.
    * @param limit The maximum length of the text.

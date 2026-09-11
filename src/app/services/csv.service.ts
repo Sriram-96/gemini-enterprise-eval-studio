@@ -39,7 +39,7 @@ export class CsvService {
       skipEmptyLines: true,
       complete: (results: {data: Array<Record<string, string>>}) => {
         this.ngZone.run(() => {
-          callback(results.data.slice(0, 100));
+          callback(results.data);
         });
       },
       error: (error: {message: string}) => {

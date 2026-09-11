@@ -61,6 +61,7 @@ describe('RunEvaluationComponent', () => {
           'getCurrentConfig',
           'getEngines',
           'setResults',
+          'appendResult',
           'setConfig',
           'setEngines',
           'setErrorMessage',
@@ -80,6 +81,9 @@ describe('RunEvaluationComponent', () => {
     mockStateService.getEngines.and.returnValue([{name: 'engine', displayName: 'Engine', modelConfigs: {}}]);
     mockStateService.setResults.and.callFake((rows: ResultRow[]) => {
       resultsSubject.next(rows);
+    });
+    mockStateService.appendResult.and.callFake((row: ResultRow) => {
+      resultsSubject.next([...resultsSubject.value, row]);
     });
 
     mockEvalService =
