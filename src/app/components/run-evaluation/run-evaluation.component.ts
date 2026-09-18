@@ -358,7 +358,12 @@ export class RunEvaluationComponent implements OnInit, OnDestroy {
         const row = turns[i];
 
         const result = await this.evalService.processRow(row, undefined, {session});
-        session = result.session;
+        // A skipped or failed turn carries no session. Keep the last good one
+        // so the remaining turns still thread, rather than silently continuing
+        // the conversation as disconnected single-turn queries.
+        if (result.session) {
+          session = result.session;
+        }
         if (runId !== this.currentRunId || !this.isProcessing) return;
 
         if (result.scoreError && !this.errorMessage) {

@@ -336,6 +336,48 @@ describe('RunEvaluationComponent', () => {
        expect(results[1].turn).toBe(2);
      }));
 
+  it('should keep threading later turns on the last good session when a turn returns none',
+     fakeAsync(() => {
+       const fixture = TestBed.createComponent(RunEvaluationComponent);
+       const component = fixture.componentInstance;
+       fixture.detectChanges();
+
+       // Turn 2 is what the backend does to a query it declines to run: it
+       // comes back SKIPPED, carrying no session.
+       const sampleRows = [
+         {query: 'turn1', golden: 'g1', conversation_id: 'conv-a', turn: '1'},
+         {query: 'turn2', golden: 'g2', conversation_id: 'conv-a', turn: '2'},
+         {query: 'turn3', golden: 'g3', conversation_id: 'conv-a', turn: '3'},
+       ];
+
+       const calls: any[] = [];
+       mockEvalService.processRow.and.callFake(
+           async (row, _progressCb, sessionContext) => {
+             calls.push({query: row.query, sessionContext});
+             return {
+               query: row.query,
+               golden: row.golden,
+               fetched: `fetched-${row.query}`,
+               ttft: 10,
+               ttfa: 20,
+               ttlt: 30,
+               tpot: 0,
+               score: 0.9,
+               errorCode: row.query === 'turn2' ? 'SKIPPED' : '',
+               session: row.query === 'turn2' ? '' : `session-after-${row.query}`,
+             };
+           });
+
+       component.startEvaluation(
+           {file: new File([], 'test.csv'), rows: sampleRows});
+       tick();
+
+       // Turn 3 still continues turn 1's session. Without this, the skipped
+       // turn would blank the session and turn 3 would silently run as an
+       // unrelated single-turn query with none of the conversation's context.
+       expect(calls[2].sessionContext).toEqual({session: 'session-after-turn1'});
+     }));
+
   it('should run independent conversations concurrently while keeping each internally sequential',
      fakeAsync(() => {
        const fixture = TestBed.createComponent(RunEvaluationComponent);
