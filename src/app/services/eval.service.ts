@@ -34,6 +34,15 @@ import {TraceCollector} from './trace-collector';
 interface AssistRequestBody {
   query: {text: string};
   session?: string;
+  /**
+   * Forces the backend to always call the agent, bypassing its own query
+   * classifier. Without this, short non-interrogative turns like "Action
+   * Confirmed" get classified as SKIP_ASSIST_FOR_NON_ASSIST_SEEKING_QUERY and
+   * the row comes back as `errorCode: SKIPPED` before the agent ever sees it
+   * -- fatal for multi-turn conversations where a later turn depends on an
+   * earlier confirmation actually being sent.
+   */
+  assistSkippingMode?: 'REQUEST_ASSIST';
   generationSpec?: {modelId: string};
   toolsSpec?: {
     vertexAiSearchSpec?: {
@@ -142,6 +151,7 @@ export class EvalService {
     const body: AssistRequestBody = {
       query: {text: row.query},
       toolsSpec,
+      assistSkippingMode: 'REQUEST_ASSIST',
     };
 
     // Note: the `isSessionLess` proto field is not recognized by the v1
